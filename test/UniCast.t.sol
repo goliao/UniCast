@@ -17,6 +17,7 @@ import {UniCast} from "../src/UniCast.sol";
 import {console} from "forge-std/console.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {UniCastImplementation} from "./shared/UniCastImplementation.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
 
 contract TestUniCast is Test, Deployers {
     using CurrencyLibrary for Currency;
@@ -66,8 +67,8 @@ contract TestUniCast is Test, Deployers {
         modifyLiquidityRouter.modifyLiquidity(
             key,
             IPoolManager.ModifyLiquidityParams({
-                tickLower: -60,
-                tickUpper: 60,
+                tickLower: -600,
+                tickUpper: 600,
                 liquidityDelta: 100 ether,
                 salt:0
             }),
@@ -80,7 +81,7 @@ contract TestUniCast is Test, Deployers {
         // // Set up our swap parameters
         PoolSwapTest.TestSettings memory testSettings = PoolSwapTest
             .TestSettings({
-                takeClaims: true,
+                takeClaims: false,
                 settleUsingBurn: false
             });
 
@@ -102,7 +103,7 @@ contract TestUniCast is Test, Deployers {
         // Set the starting block number to T (e.g., 12345)
         uint256 T = 12355;
         vm.roll(T);
-
+        int256 bal_delta;
         // 1. Conduct a swap at baseline vol
         // This should just use `BASE_FEE` 
         uint256 balanceOfToken1Before = currency1.balanceOfSelf();
