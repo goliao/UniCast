@@ -37,7 +37,7 @@ contract UniCast is BaseHook {
         return
             Hooks.Permissions({
                 beforeInitialize: true,
-                afterInitialize: true,
+                afterInitialize: false,
                 beforeAddLiquidity: false,
                 beforeRemoveLiquidity: false,
                 afterAddLiquidity: false,
@@ -76,7 +76,7 @@ contract UniCast is BaseHook {
     }
 
 
-    function getFee() internal returns (uint24) {
+    function getFee() public returns (uint24) {
 
         // TODO: replace with event implied vol feed
         if (block.number == 12355) {
