@@ -77,7 +77,7 @@ contract UniCast is BaseHook {
 
 
     function getFee() public returns (uint24) {
-
+        console.log("at block", block.number);
         // TODO: replace with event implied vol feed
         if (block.number == 12355) {
             console.log("High vol event at block", block.number); // Log message
@@ -86,9 +86,10 @@ contract UniCast is BaseHook {
         }
 
         if (impliedVol > 20) {
+            console.log("High vol at block", block.number);
             return uint24(BASE_FEE * impliedVol/20);
         }
-
+        
         return BASE_FEE;
     }
 

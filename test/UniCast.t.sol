@@ -16,11 +16,14 @@ import {PoolSwapTest} from "v4-core/test/PoolSwapTest.sol";
 import {UniCast} from "../src/UniCast.sol";
 import {console} from "forge-std/console.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
+import {UniCastImplementation} from "./shared/UniCastImplementation.sol";
 
 contract TestUniCast is Test, Deployers {
     using CurrencyLibrary for Currency;
     using PoolIdLibrary for PoolKey;
-
+    UniCastImplementation unicast = UniCastImplementation(
+    address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG))
+    );
     UniCast hook;
 
     function setUp() public {
@@ -35,22 +38,25 @@ contract TestUniCast is Test, Deployers {
             Hooks.BEFORE_INITIALIZE_FLAG |
                 Hooks.BEFORE_SWAP_FLAG 
         );
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            flags,
-            0,
-            type(UniCast).creationCode,
-            abi.encode(manager)
-        );
+        UniCastImplementation impl = new UniCastImplementation(manager, unicast);
+        vm.etch(address(unicast), address(impl).code);
+
+        // (, bytes32 salt) = HookMiner.find(
+        //     address(this),
+        //     flags,
+        //     0,
+        //     type(UniCast).creationCode,
+        //     abi.encode(manager)
+        // );
 
         
-        hook = new UniCast{salt: salt}(manager);
+        // hook = new UniCast{salt: salt}(manager);
 
         // Initialize a pool
         (key, ) = initPool(
             currency0,
             currency1,
-            hook,
+            unicast,
             LPFeeLibrary.DYNAMIC_FEE_FLAG, // Set the `DYNAMIC_FEE_FLAG` in place of specifying a fixed fee
             SQRT_PRICE_1_1,
             ZERO_BYTES
@@ -67,41 +73,46 @@ contract TestUniCast is Test, Deployers {
             }),
             ZERO_BYTES
         );
+        console.log("pool added");
     }
 
     function test_feeUpdatesWithimpVol() public {
-        // Set up our swap parameters
+        // // Set up our swap parameters
         PoolSwapTest.TestSettings memory testSettings = PoolSwapTest
             .TestSettings({
                 takeClaims: true,
-                settleUsingBurn: true
+                settleUsingBurn: false
             });
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: -0.00001 ether,
+            amountSpecified: -0.01 ether,
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
-
+        console.log("testtest");
         // Current vol
-        uint128 impliedVol = hook.getFee();
-        assertEq(impliedVol, 20);
+        uint128 fee = unicast.getFee();
+        console.log("Base Fee Output", fee);
+        assertEq(fee, 500);
         
-        // // ----------------------------------------------------------------------
-        // // ----------------------------------------------------------------------
-        // // ----------------------------------------------------------------------
-        // // ----------------------------------------------------------------------
-        // // Set the starting block number to T (e.g., 12345)
-        // uint256 T = 12345;
-        // vm.roll(T);
+        // ----------------------------------------------------------------------
+        // ----------------------------------------------------------------------
+        // ----------------------------------------------------------------------
+        // ----------------------------------------------------------------------
+        // Set the starting block number to T (e.g., 12345)
+        uint256 T = 12355;
+        vm.roll(T);
 
-        // // 1. Conduct a swap at baseline vol
-        // // This should just use `BASE_FEE` 
-        // uint256 balanceOfToken1Before = currency1.balanceOfSelf();
-        // swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-        // uint256 balanceOfToken1After = currency1.balanceOfSelf();
-        // uint256 outputFromBaseFeeSwap = balanceOfToken1After -
-        //     balanceOfToken1Before;
+        // 1. Conduct a swap at baseline vol
+        // This should just use `BASE_FEE` 
+        uint256 balanceOfToken1Before = currency1.balanceOfSelf();
+        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+        uint256 balanceOfToken1After = currency1.balanceOfSelf();
+        uint256 outputFromBaseFeeSwap = balanceOfToken1After -
+            balanceOfToken1Before;
+        
+        console.log("outputFromBaseFeeSwap:", outputFromBaseFeeSwap);
+        console.log("balanceOfToken1After:", balanceOfToken1After);
 
         // assertGt(balanceOfToken1After, balanceOfToken1Before);
 
