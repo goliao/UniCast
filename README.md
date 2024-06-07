@@ -1,66 +1,11 @@
-## Foundry
+## UniCast
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+UniCast is a forward-looking dynamic hook that applied event-based and market-implied volatility to affect changes in LPfees and rebalance LP positions via a hook operated vault.
 
-Foundry consists of:
-
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
-```
-
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+Features:
+- Improving LP return using forward-looking events and expected price dynamics rebalancing/fee.
+- Reduce informed trading (and MEV in the dex context) during known events is something that all tradfi market makers do, and this hook bring this tradfi practice to on-chain dex
+- Anticipate and preposition toward future events and expected pricing dynamics:
+1) Economic news release schedule, e.g. CPI, NFPR, Fed interest rate decisions 1b) Crypto-specific events, e.g. ETF approval announcement, policy votes
+2) Forward-looking volatility implied by options market (Deribit, Panoptics, Opyn)
+3) Yield-bearing assets rebalancing, e.g. StETH/ETH pool, USDY/USDC pool
