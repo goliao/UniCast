@@ -10,6 +10,7 @@ import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
+import {Oracle} from "../src/Oracle.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {HookMiner} from "./utils/HookMiner.sol";
 import {PoolSwapTest} from "v4-core/test/PoolSwapTest.sol";
@@ -26,6 +27,7 @@ contract TestUniCast is Test, Deployers {
     address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG))
     );
     UniCast hook;
+    Oracle oracle = Oracle(makeAddr("oracle"));
 
     function setUp() public {
         // Deploy v4-core
@@ -39,7 +41,7 @@ contract TestUniCast is Test, Deployers {
             Hooks.BEFORE_INITIALIZE_FLAG |
                 Hooks.BEFORE_SWAP_FLAG 
         );
-        UniCastImplementation impl = new UniCastImplementation(manager, unicast);
+        UniCastImplementation impl = new UniCastImplementation(manager, unicast, oracle);
         vm.etch(address(unicast), address(impl).code);
 
         // (, bytes32 salt) = HookMiner.find(
