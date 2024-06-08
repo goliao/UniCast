@@ -4,30 +4,47 @@ pragma solidity ^0.8.25;
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
-import {PoolId} from "v4-core/types/PoolId.sol";
+import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
 import {BaseHook} from "v4-periphery/BaseHook.sol";
-import {IUnlockCallback} from "v4-core/interfaces/callback/IUnlockCallback.sol";
 import {UniswapV4ERC20} from "v4-periphery/libraries/UniswapV4ERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {BeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
+import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
+import {CurrencyLibrary, Currency} from "v4-core/types/Currency.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {IHooks} from "v4-core/interfaces/IHooks.sol";
+import {TickMath} from "v4-core/libraries/TickMath.sol";
+import {FullMath} from "v4-core/libraries/FullMath.sol";
+import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
+import {FixedPoint96} from "v4-core/libraries/FixedPoint96.sol";
+import {LiquidityAmounts} from "v4-periphery/libraries/LiquidityAmounts.sol";
+import {SafeCast} from "v4-core/libraries/SafeCast.sol";
+import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
+import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "forge-std/console.sol";
 
-contract Vault is Ownable, BaseHook, IUnlockCallback {
+contract Vault is BaseHook {
     using LPFeeLibrary for uint24;
-
-    uint128 public impliedVol;
-    uint24 public constant BASE_FEE = 500; // 0.05%
-    address public keeper;
-
-    event VolEvent(uint256 value);
-    event KeeperUpdated(address indexed newKeeper);
+    using PoolIdLibrary for PoolKey;
+    using StateLibrary for IPoolManager;
+    using SafeCast for uint256;
+    using SafeCast for uint128;
+    using CurrencyLibrary for Currency;
+    using SafeERC20 for IERC20;
+    
     error MustUseDynamicFee();
-    error Unauthorized();
     event LiquidityAdded(uint256 amount0, uint256 amount1);
     event LiquidityRemoved(uint256 amount0, uint256 amount1);
+
+    error PoolNotInitialized();
+    error InsufficientInitialLiquidity();
+    error SenderMustBeHook();
+    error TooMuchSlippage();
+    error LiquidityDoesntMeetMinimum();
 
     int256 internal constant MAX_INT = type(int256).max;
     uint16 internal constant MINIMUM_LIQUIDITY = 1000;
@@ -49,34 +66,9 @@ contract Vault is Ownable, BaseHook, IUnlockCallback {
 
     mapping(PoolId => PoolInfo) public poolInfos;
 
-    modifier onlyKeeper() {
-        if (msg.sender != keeper) revert Unauthorized();
-        _;
-    }
+    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
-    constructor(IPoolManager _poolManager, address _keeper) {
-        poolManager = _poolManager;
-        keeper = _keeper;
-    }
-
-    function setImpliedVol(uint128 _impliedVol) external onlyKeeper {
-        impliedVol = _impliedVol;
-        emit VolEvent(impliedVol);
-    }
-
-    function updateKeeper(address _newKeeper) external onlyKeeper {
-        keeper = _newKeeper;
-        emit KeeperUpdated(_newKeeper);
-    }
-
-    function getFee() public view returns (uint24) {
-        if (impliedVol > 20) {
-            return uint24(BASE_FEE * impliedVol / 20);
-        }
-        return BASE_FEE;
-    }
-
-    function getHooksPermissions() public pure override returns (Hooks.Permissions memory) {
+    function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: true,
             afterInitialize: false,
@@ -88,16 +80,18 @@ contract Vault is Ownable, BaseHook, IUnlockCallback {
             afterSwap: true,
             beforeDonate: false,
             afterDonate: false,
-            noOp: false,
-            accessLock: true
+            beforeSwapReturnDelta: false,
+            afterSwapReturnDelta: false,
+            afterAddLiquidityReturnDelta: false,
+            afterRemoveLiquidityReturnDelta: false
         });
     }
 
     function beforeInitialize(
         address,
         PoolKey calldata key,
-        uint160 sqrtPriceX96,
-        bytes calldata data
+        uint160,
+        bytes calldata
     ) external override poolManagerOnly returns (bytes4) {
         PoolId poolId = key.toId();
         string memory tokenSymbol = string(
@@ -114,7 +108,7 @@ contract Vault is Ownable, BaseHook, IUnlockCallback {
         UniswapV4ERC20 poolToken = new UniswapV4ERC20(tokenSymbol, tokenSymbol);
         poolInfos[poolId] = PoolInfo({
             hasAccruedFees: false,
-            liquidityToken: poolToken
+            poolToken: poolToken
         });
         return IHooks.beforeInitialize.selector;
     }
@@ -127,7 +121,7 @@ contract Vault is Ownable, BaseHook, IUnlockCallback {
     ) external view override returns (bytes4) {
         if (sender != address(this)) revert SenderMustBeHook();
 
-        return FullRange.beforeAddLiquidity.selector;
+        return Vault.beforeAddLiquidity.selector;
     }
 
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
@@ -151,7 +145,7 @@ contract Vault is Ownable, BaseHook, IUnlockCallback {
         IPoolManager.SwapParams calldata,
         BalanceDelta,
         bytes calldata
-    ) external virtual override poolManagerOnly returns (bytes4) {
+    ) external virtual override poolManagerOnly returns (bytes4, int128) {
         PoolId poolId = poolKey.toId();
         PoolInfo storage poolInfo = poolInfos[poolId];
 
@@ -159,7 +153,7 @@ contract Vault is Ownable, BaseHook, IUnlockCallback {
 
         autoRebalance(poolKey);
 
-        return IHooks.afterSwap.selector;
+        return (IHooks.afterSwap.selector, 0);
     }
 
     function addLiquidity(PoolKey memory poolKey, uint256 amount0, uint256 amount1) 
@@ -186,22 +180,23 @@ contract Vault is Ownable, BaseHook, IUnlockCallback {
             revert LiquidityDoesntMeetMinimum();
         }
 
-        BalanceDelta addedDelta = poolManager.modifyLiquidity(
+        (BalanceDelta addedDelta, ) = poolManager.modifyLiquidity(
             poolKey,
             IPoolManager.ModifyLiquidityParams({
                 tickLower: MIN_TICK,
                 tickUpper: MAX_TICK,
                 liquidityDelta: liquidity.toInt256(),
                 salt: 0
-            })
+            }),
+            ZERO_BYTES
         );
 
         if (poolLiquidity == 0) {
             liquidity -= MINIMUM_LIQUIDITY;
-            UniswapV4ERC20(poolInfos[poolId].liquidityToken).mint(address(0), MINIMUM_LIQUIDITY);
+            UniswapV4ERC20(poolInfos[poolId].poolToken).mint(address(0), MINIMUM_LIQUIDITY);
         }
 
-        UniswapV4ERC20(poolInfos[poolId].liquidityToken).mint(msg.sender, liquidity);
+        UniswapV4ERC20(poolInfos[poolId].poolToken).mint(msg.sender, liquidity);
 
         if (uint128(-addedDelta.amount0()) < amount0 || uint128(-addedDelta.amount1()) < amount1) {
             revert TooMuchSlippage();
@@ -227,17 +222,18 @@ contract Vault is Ownable, BaseHook, IUnlockCallback {
             amount1
         );
 
-        BalanceDelta delta = poolManager.modifyLiquidity(
+        (BalanceDelta delta, ) = poolManager.modifyLiquidity(
             poolKey,
             IPoolManager.ModifyLiquidityParams({
                 tickLower: MIN_TICK,
                 tickUpper: MAX_TICK,
                 liquidityDelta: -(liquidityToRemove.toInt256()),
                 salt: 0
-            })
+            }),
+            ZERO_BYTES
         );
 
-        UniswapV4ERC20(poolInfos[poolId].liquidityToken).burn(msg.sender, uint256(liquidityToRemove));
+        UniswapV4ERC20(poolInfos[poolId].poolToken).burn(msg.sender, uint256(liquidityToRemove));
 
         if (uint128(-delta.amount0()) < amount0 || uint128(-delta.amount1()) < amount1) {
             revert TooMuchSlippage();
@@ -261,7 +257,7 @@ contract Vault is Ownable, BaseHook, IUnlockCallback {
     function rebalanceRequired(PoolKey memory poolKey) public view returns (bool) {
         PoolId poolId = poolKey.toId();
         PoolInfo storage poolInfo = poolInfos[poolId];
-        (, int24 currentTick, ) = poolManager.getSlot0(poolId);
+        (, int24 currentTick,, ) = poolManager.getSlot0(poolId);
 
         // TODO: define rebalance conditions
         return true;
@@ -269,6 +265,7 @@ contract Vault is Ownable, BaseHook, IUnlockCallback {
 
     function unlockCallback(bytes calldata rawData)
         external
+        override
         returns (bytes memory)
     {
         CallbackData memory data = abi.decode(rawData, (CallbackData));
@@ -285,8 +282,23 @@ contract Vault is Ownable, BaseHook, IUnlockCallback {
     }
 
     function _settleDeltas(address sender, PoolKey memory key, BalanceDelta delta) internal {
-        key.currency0.settle(poolManager, sender, uint256(int256(-delta.amount0())), false);
-        key.currency1.settle(poolManager, sender, uint256(int256(-delta.amount1())), false);
+        if (sender == address(this)) {
+            key.currency0.transfer(address(poolManager), uint256(int256(-delta.amount0())));
+            key.currency1.transfer(address(poolManager), uint256(int256(-delta.amount1())));
+        } else {
+            IERC20(Currency.unwrap(key.currency0)).safeTransferFrom(
+                sender,
+                address(poolManager),
+                uint256(int256(-delta.amount0()))
+            );
+            IERC20(Currency.unwrap(key.currency1)).safeTransferFrom(
+                sender,
+                address(poolManager),
+                uint256(int256(-delta.amount1()))
+            );
+        }
+        poolManager.settle(key.currency0);
+        poolManager.settle(key.currency1);
     }
 
     function _takeDeltas(address sender, PoolKey memory key, BalanceDelta delta) internal {
@@ -308,7 +320,7 @@ contract Vault is Ownable, BaseHook, IUnlockCallback {
         uint256 liquidityToRemove = FullMath.mulDiv(
             uint256(-params.liquidityDelta),
             poolManager.getLiquidity(poolId),
-            UniswapV4ERC20(pool.liquidityToken).totalSupply()
+            UniswapV4ERC20(pool.poolToken).totalSupply()
         );
 
         params.liquidityDelta = -(liquidityToRemove.toInt256());
