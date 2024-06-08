@@ -16,19 +16,19 @@ contract UniCast {
     using LPFeeLibrary for uint24;
     event VolEvent(uint256 value);
 
-    IVolatilityOracle public oracle;
+    IVolatilityOracle public volatilityOracle;
 
     // The default base fees we will charge
     uint24 public constant BASE_FEE = 500; // 0.05%
 
     error MustUseDynamicFee();
 
-    constructor(IVolatilityOracle _volatilityOracle) {
-        oracle = _volatilityOracle;
+    function getVolatilityOracle() external view returns (address) {
+        return address(volatilityOracle);
     }
 
     function getFee() public view returns (uint24) {
-        uint24 volatility = oracle.getVolatility();
+        uint24 volatility = volatilityOracle.getVolatility();
         return BASE_FEE * volatility / 100;
     }
 }

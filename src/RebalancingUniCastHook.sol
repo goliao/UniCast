@@ -7,6 +7,7 @@ import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {UniCast} from "./UniCast.sol";
 import {Vault} from "./Vault.sol";
+import {Initializable} from "./Initializable.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
@@ -14,10 +15,14 @@ import {IVolatilityOracle} from "./interface/IVolatilityOracle.sol";
 
 import "forge-std/console.sol";
 
-contract RebalancingUniCastHook is UniCast, BaseHook {
+contract RebalancingUniCastHook is UniCast, BaseHook, Initializable {
     using LPFeeLibrary for uint24;
 
-    constructor(IPoolManager poolManager, IVolatilityOracle _volatilityOracle) UniCast(_volatilityOracle) BaseHook(poolManager)  {
+    constructor(IPoolManager poolManager) BaseHook(poolManager) {
+    }
+
+    function initialize(IVolatilityOracle oracle) public initializer {
+        volatilityOracle = oracle;
     }
 
     // Required override function for BaseHook to let the PoolManager know which hooks are implemented
@@ -51,7 +56,7 @@ contract RebalancingUniCastHook is UniCast, BaseHook {
         PoolKey calldata key,
         uint160,
         bytes calldata
-    ) external override returns (bytes4) {
+    ) pure external override returns (bytes4) {
         if (!key.fee.isDynamicFee()) revert MustUseDynamicFee();
         return this.beforeInitialize.selector;
     }

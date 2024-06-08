@@ -17,17 +17,29 @@ import {PoolSwapTest} from "v4-core/test/PoolSwapTest.sol";
 import {UniCast} from "../src/UniCast.sol";
 import {console} from "forge-std/console.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
+import {RebalancingUniCastHook} from "../src/RebalancingUniCastHook.sol";
 import {UniCastImplementation} from "./shared/UniCastImplementation.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
+
 
 contract TestUniCast is Test, Deployers {
     using CurrencyLibrary for Currency;
     using PoolIdLibrary for PoolKey;
-    UniCastImplementation unicast = UniCastImplementation(
-    address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG))
-    );
-    UniCast hook;
-    Oracle oracle = Oracle(makeAddr("oracle"));
+
+    address targetAddr = address(uint160(
+            Hooks.BEFORE_INITIALIZE_FLAG |
+                Hooks.BEFORE_SWAP_FLAG 
+        ));
+    RebalancingUniCastHook hook = RebalancingUniCastHook(targetAddr);
+    address oracleAddr = makeAddr("oracle");
+    Oracle oracle = Oracle(oracleAddr);
+    UniCastImplementation impl;
+
+    PoolSwapTest.TestSettings testSettings = PoolSwapTest
+        .TestSettings({
+            takeClaims: false,
+            settleUsingBurn: false
+        });
 
     function setUp() public {
         // Deploy v4-core
@@ -36,13 +48,11 @@ contract TestUniCast is Test, Deployers {
         // Deploy, mint tokens, and approve all periphery contracts for two tokens
         (currency0, currency1) = deployMintAndApprove2Currencies();
 
-        // Deploy our hook with the proper flags
-        uint160 flags = uint160(
-            Hooks.BEFORE_INITIALIZE_FLAG |
-                Hooks.BEFORE_SWAP_FLAG 
-        );
-        UniCastImplementation impl = new UniCastImplementation(manager, unicast, oracle);
-        vm.etch(address(unicast), address(impl).code);
+        impl = new UniCastImplementation(manager);
+        vm.etch(targetAddr, address(impl).code);
+        hook.initialize(oracle);
+        Hooks.validateHookPermissions(hook, hook.getHookPermissions());
+
 
         // (, bytes32 salt) = HookMiner.find(
         //     address(this),
@@ -59,7 +69,7 @@ contract TestUniCast is Test, Deployers {
         (key, ) = initPool(
             currency0,
             currency1,
-            unicast,
+            hook,
             LPFeeLibrary.DYNAMIC_FEE_FLAG, // Set the `DYNAMIC_FEE_FLAG` in place of specifying a fixed fee
             SQRT_PRICE_1_1,
             ZERO_BYTES
@@ -76,75 +86,41 @@ contract TestUniCast is Test, Deployers {
             }),
             ZERO_BYTES
         );
-        console.log("pool added");
     }
 
-    function test_feeUpdatesWithimpVol() public {
-        // // Set up our swap parameters
-        PoolSwapTest.TestSettings memory testSettings = PoolSwapTest
-            .TestSettings({
-                takeClaims: false,
-                settleUsingBurn: false
-            });
+    function testEtch() public {
+        assertEq(address(hook), targetAddr);
+        assertEq(address(hook).code, address(impl).code);
+        assertTrue(hook.initialized());
+    }
 
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: -0.01 ether,
-            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
-        });
-        console.log("testtest");
-        // Current vol
-        uint128 fee = unicast.getFee();
+    function testVolatilityOracleAddress() public {
+        assertEq(oracleAddr, address(hook.getVolatilityOracle()));
+    }
+    function testGetFeeWithVolatility() public {
+        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getVolatility.selector), abi.encode(uint24(150)));
+        uint128 fee = hook.getFee();
         console.log("Base Fee Output", fee);
-        assertEq(fee, 500);
-        
-        // ----------------------------------------------------------------------
-        // ----------------------------------------------------------------------
-        // ----------------------------------------------------------------------
-        // ----------------------------------------------------------------------
-        // Set the starting block number to T (e.g., 12345)
-        uint256 T = 12355;
-        vm.roll(T);
-        int256 bal_delta;
-        // 1. Conduct a swap at baseline vol
-        // This should just use `BASE_FEE` 
-        uint256 balanceOfToken1Before = currency1.balanceOfSelf();
-        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-        uint256 balanceOfToken1After = currency1.balanceOfSelf();
-        uint256 outputFromBaseFeeSwap = balanceOfToken1After -
-            balanceOfToken1Before;
-        
-        console.log("outputFromBaseFeeSwap:", outputFromBaseFeeSwap);
-        console.log("balanceOfToken1After:", balanceOfToken1After);
+        assertEq(fee, 500 * 1.5);
+    }
 
-        // assertGt(balanceOfToken1After, balanceOfToken1Before);
-
-
-        // // ----------------------------------------------------------------------
-        // // ----------------------------------------------------------------------
-        // // ----------------------------------------------------------------------
-        // // ----------------------------------------------------------------------
-
-        // // 2. Conduct a swap at higher vol
-        // // This should have a higher transaction fees
-        // uint256 targetBlock = 12355;
-        // vm.roll(targetBlock);
-
-        // balanceOfToken1Before = currency1.balanceOfSelf();
+    function testSwap() public {
+        // IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+        //     zeroForOne: true,
+        //     amountSpecified: -0.01 ether,
+        //     sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        // });
+        // // 1. Conduct a swap at baseline vol
+        // // This should just use `BASE_FEE` 
+        // uint256 balanceOfToken1Before = currency1.balanceOfSelf();
         // swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-        // balanceOfToken1After = currency1.balanceOfSelf();
-
-        // uint outputFromIncreasedFeeSwap = balanceOfToken1After -
+        // uint256 balanceOfToken1After = currency1.balanceOfSelf();
+        // uint256 outputFromBaseFeeSwap = balanceOfToken1After -
         //     balanceOfToken1Before;
+        
+        // console.log("outputFromBaseFeeSwap:", outputFromBaseFeeSwap);
+        // console.log("balanceOfToken1After:", balanceOfToken1After);
 
         // assertGt(balanceOfToken1After, balanceOfToken1Before);
-
-
-        // // 3. Check all the output amounts
-
-        // console.log("Base Fee Output", outputFromBaseFeeSwap);
-        // console.log("Increased Fee Output", outputFromIncreasedFeeSwap);
-
-        // assertGt(outputFromBaseFeeSwap, outputFromIncreasedFeeSwap);
     }
 }
