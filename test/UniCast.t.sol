@@ -20,7 +20,8 @@ import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {UniCastHook} from "../src/UniCastHook.sol";
 import {UniCastImplementation} from "./shared/UniCastImplementation.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
-
+import {MockERC20} from "solmate/test/utils/mocks/MockERC20.sol";
+import "forge-std/console.sol";
 
 contract TestUniCast is Test, Deployers {
     using CurrencyLibrary for Currency;
@@ -35,7 +36,8 @@ contract TestUniCast is Test, Deployers {
     UniCastHook hook = UniCastHook(targetAddr);
     address oracleAddr = makeAddr("oracle");
     UniCastOracle oracle = UniCastOracle(oracleAddr);
-    UniCastImplementation impl;
+    MockERC20 token0;
+    MockERC20 token1;
 
     PoolSwapTest.TestSettings testSettings = PoolSwapTest
         .TestSettings({
@@ -44,28 +46,25 @@ contract TestUniCast is Test, Deployers {
         });
 
     function setUp() public {
+        emit log_named_address("targetAddr", targetAddr);
         // Deploy v4-core
         deployFreshManagerAndRouters();
 
+        deployCodeTo(
+            "UniCastHook.sol", 
+            abi.encode(manager, oracleAddr),
+            targetAddr
+        );
+
         // Deploy, mint tokens, and approve all periphery contracts for two tokens
         (currency0, currency1) = deployMintAndApprove2Currencies();
+        token0 = MockERC20(Currency.unwrap(currency0));
+        token1 = MockERC20(Currency.unwrap(currency1));
+        token0.approve(address(hook), type(uint256).max);
+        token1.approve(address(hook), type(uint256).max);
 
-        impl = new UniCastImplementation(manager, oracle, hook);
-        vm.etch(targetAddr, address(impl).code);
-        // hook.initialize(oracle);
-        // Hooks.validateHookPermissions(hook, hook.getHookPermissions());
+        emit log_address(address(hook));
 
-
-        // (, bytes32 salt) = HookMiner.find(
-        //     address(this),
-        //     flags,
-        //     0,
-        //     type(UniCast).creationCode,
-        //     abi.encode(manager)
-        // );
-
-        
-        // hook = new UniCast{salt: salt}(manager);
 
         // Initialize a pool
         (key, ) = initPool(
@@ -76,24 +75,31 @@ contract TestUniCast is Test, Deployers {
             SQRT_PRICE_1_1,
             ZERO_BYTES
         );
+        emit log_uint(key.fee);
+
+        address charlie = makeAddr("charlie");
+        vm.startPrank(charlie);
+        token0.mint(charlie, 10000 ether);
+        token1.mint(charlie, 10000 ether);
+        token0.approve(address(hook), type(uint256).max);
+        token1.approve(address(hook), type(uint256).max);
 
         // Add some liquidity
-        modifyLiquidityRouter.modifyLiquidity(
-            key,
-            IPoolManager.ModifyLiquidityParams({
-                tickLower: -600,
-                tickUpper: 600,
-                liquidityDelta: 100 ether,
-                salt:0
-            }),
-            ZERO_BYTES
-        );
+        // modifyLiquidityRouter.modifyLiquidity(
+        //     key,
+        //     IPoolManager.ModifyLiquidityParams({
+        //         tickLower: -600,
+        //         tickUpper: 600,
+        //         liquidityDelta: 100 ether,
+        //         salt:0
+        //     }),
+        //     ZERO_BYTES
+        // );
+        vm.stopPrank();
     }
 
     function testEtch() public {
         assertEq(address(hook), targetAddr);
-        assertEq(address(hook).code, address(impl).code);
-        // assertTrue(hook.initialized());
     }
 
     function testVolatilityOracleAddress() public {
@@ -102,7 +108,7 @@ contract TestUniCast is Test, Deployers {
     function testGetFeeWithVolatility() public {
         vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getVolatility.selector), abi.encode(uint24(150)));
         uint128 fee = hook.getFee();
-        console.log("Base Fee Output", fee);
+        console.logUint(fee);
         assertEq(fee, 500 * 1.5);
     }
 

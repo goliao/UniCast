@@ -12,7 +12,7 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/type
 
 import "forge-std/console.sol";
 
-abstract contract UniCastVolitilityFee is BaseHook {
+abstract contract UniCastVolitilityFee {
     using LPFeeLibrary for uint24;
 
     event VolEvent(uint256 value);
@@ -28,61 +28,6 @@ abstract contract UniCastVolitilityFee is BaseHook {
     constructor(IPoolManager _poolManager, IUniCastOracle _oracle) {
         poolManagerFee = _poolManager;
         volitilityOracle = _oracle;
-    }
-
-    function getHookPermissions()
-        public
-        pure
-        virtual
-        override
-        returns (Hooks.Permissions memory)
-    {
-        return
-            Hooks.Permissions({
-                beforeInitialize: true,
-                afterInitialize: false,
-                beforeAddLiquidity: false,
-                beforeRemoveLiquidity: false,
-                afterAddLiquidity: false,
-                afterRemoveLiquidity: false,
-                beforeSwap: true,
-                afterSwap: false,
-                beforeDonate: false,
-                afterDonate: false,
-                beforeSwapReturnDelta: false,
-                afterSwapReturnDelta: false,
-                afterAddLiquidityReturnDelta: false,
-                afterRemoveLiquidityReturnDelta: false
-            });
-    }
-
-    function beforeInitialize(
-        address,
-        PoolKey calldata key,
-        uint160,
-        bytes calldata
-    ) external virtual override returns (bytes4) {
-        if (!key.fee.isDynamicFee()) revert MustUseDynamicFee();
-        // impliedVol=20;
-        return this.beforeInitialize.selector;
-    }
-
-    function beforeSwap(
-        address,
-        PoolKey calldata key,
-        IPoolManager.SwapParams calldata,
-        bytes calldata
-    )
-        external
-        override
-        virtual
-        poolManagerOnly
-        returns (bytes4, BeforeSwapDelta, uint24)
-    {
-        uint24 fee = getFee();
-        poolManagerFee.updateDynamicLPFee(key, fee);
-
-        return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
     function getVolatilityOracle() external view returns (address) {

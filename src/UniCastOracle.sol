@@ -22,6 +22,7 @@ contract UniCastOracle is Ownable, IUniCastOracle {
 
     constructor(address _keeper) Ownable(_keeper) {
         keeper = _keeper;
+        impliedVol = 20;
     }
 
     function setLiquidityData(PoolId _poolId, int24 _tickLower, int24 _tickUpper, int256 _liquidityDelta) external onlyKeeper {

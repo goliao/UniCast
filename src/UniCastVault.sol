@@ -27,9 +27,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {TransientStateLibrary} from "v4-core/libraries/TransientStateLibrary.sol";
 import {IUniCastOracle, LiquidityData} from "./interface/IUniCastOracle.sol";
 
-import "forge-std/console.sol";
-
-abstract contract UniCastVault is BaseHook {
+abstract contract UniCastVault {
     using LPFeeLibrary for uint24;
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
@@ -75,109 +73,9 @@ abstract contract UniCastVault is BaseHook {
     mapping(PoolId => PoolInfo) public poolInfos;
 
     constructor(IPoolManager _poolManager, IUniCastOracle _oracle) {
-        poolManager = _poolManager;
+        poolManagerVault = _poolManager;
         liquidityOracle = _oracle;
     } 
-
-    function getHookPermissions() 
-        public 
-        pure 
-        virtual
-        override 
-        returns (Hooks.Permissions memory) 
-    {
-        return Hooks.Permissions({
-            beforeInitialize: true,
-            afterInitialize: false,
-            beforeAddLiquidity: true,
-            afterAddLiquidity: false,
-            beforeRemoveLiquidity: false,
-            afterRemoveLiquidity: false,
-            beforeSwap: true,
-            afterSwap: true,
-            beforeDonate: false,
-            afterDonate: false,
-            beforeSwapReturnDelta: false,
-            afterSwapReturnDelta: false,
-            afterAddLiquidityReturnDelta: false,
-            afterRemoveLiquidityReturnDelta: false
-        });
-    }
-
-    function beforeInitialize(
-        address,
-        PoolKey calldata key,
-        uint160,
-        bytes calldata
-    ) external override virtual poolManagerOnly returns (bytes4) {
-        PoolId poolId = key.toId();
-        string memory tokenSymbol = string(
-            abi.encodePacked(
-                "UniV4",
-                "-",
-                IERC20Metadata(Currency.unwrap(key.currency0)).symbol(),
-                "-",
-                IERC20Metadata(Currency.unwrap(key.currency1)).symbol(),
-                "-",
-                Strings.toString(uint256(key.fee))
-            )
-        );
-        UniswapV4ERC20 poolToken = new UniswapV4ERC20(tokenSymbol, tokenSymbol);
-        poolInfos[poolId] = PoolInfo({
-            hasAccruedFees: false,
-            poolToken: poolToken
-        });
-        return IHooks.beforeInitialize.selector;
-    }
-
-    function beforeAddLiquidity(
-        address sender,
-        PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) external virtual override returns (bytes4) {
-        if (sender != address(this)) revert SenderMustBeHook();
-
-        return UniCastVault.beforeAddLiquidity.selector;
-    }
-
-    function beforeSwap(
-        address, 
-        PoolKey calldata key, 
-        IPoolManager.SwapParams calldata, 
-        bytes calldata
-    )
-        external
-        virtual
-        override
-        returns (bytes4, BeforeSwapDelta, uint24)
-    {
-        PoolId poolId = key.toId();
-
-        if (!poolInfos[poolId].hasAccruedFees) {
-            PoolInfo storage pool = poolInfos[poolId];
-            pool.hasAccruedFees = true;
-        }
-
-        return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
-    }
-
-    function afterSwap(
-        address,
-        PoolKey calldata poolKey,
-        IPoolManager.SwapParams calldata,
-        BalanceDelta,
-        bytes calldata
-    ) external virtual override poolManagerOnly returns (bytes4, int128) {
-        PoolId poolId = poolKey.toId();
-        PoolInfo storage poolInfo = poolInfos[poolId];
-
-        poolInfo.hasAccruedFees = true;
-
-        autoRebalance(poolKey);
-
-        return (IHooks.afterSwap.selector, 0);
-    }
 
     function addLiquidity(PoolKey memory poolKey, uint256 amount0, uint256 amount1) 
         external 
@@ -307,13 +205,12 @@ abstract contract UniCastVault is BaseHook {
         }
     }
 
-    function unlockCallback(bytes calldata rawData)
-        external
+    function _unlockVaultCallback(bytes calldata rawData)
+        internal
         virtual
-        override
         returns (bytes memory)
     {
-        require(msg.sender == address(poolManager), "Callback not called by manager");
+        require(msg.sender == address(poolManagerVault), "Callback not called by manager");
         
         CallbackData memory data = abi.decode(rawData, (CallbackData));
         BalanceDelta delta;
@@ -358,17 +255,17 @@ abstract contract UniCastVault is BaseHook {
 
         if (delta0 != 0) {
             if (delta0 < 0) {
-                _settle(modifierData.key.currency0, poolManager, modifierData.sender, uint256(-delta0), modifierData.settleUsingBurn);
+                _settle(modifierData.key.currency0, poolManagerVault, modifierData.sender, uint256(-delta0), modifierData.settleUsingBurn);
             } else {
-                _take(modifierData.key.currency0, poolManager, modifierData.sender, uint256(delta0), modifierData.takeClaims);
+                _take(modifierData.key.currency0, poolManagerVault, modifierData.sender, uint256(delta0), modifierData.takeClaims);
             }
         }
 
         if (delta1 != 0) {
             if (delta1 < 0) {
-                _settle(modifierData.key.currency1, poolManager, modifierData.sender, uint256(-delta1), modifierData.settleUsingBurn);
+                _settle(modifierData.key.currency1, poolManagerVault, modifierData.sender, uint256(-delta1), modifierData.settleUsingBurn);
             } else {
-                _take(modifierData.key.currency1, poolManager, modifierData.sender, uint256(delta1), modifierData.takeClaims);
+                _take(modifierData.key.currency1, poolManagerVault, modifierData.sender, uint256(delta1), modifierData.takeClaims);
             }
         }
     }
@@ -379,7 +276,7 @@ abstract contract UniCastVault is BaseHook {
         returns (uint256 userBalance, uint256 poolBalance, int256 delta)
     {
         userBalance = currency.balanceOf(user);
-        poolBalance = currency.balanceOf(address(poolManager));
+        poolBalance = currency.balanceOf(address(poolManagerVault));
         delta = poolManagerVault.currencyDelta(deltaHolder, currency);
     }
 

@@ -5,6 +5,7 @@ import {BaseHook} from "v4-periphery/BaseHook.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
+import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {UniCastVolitilityFee} from "./UniCastVolitilityFee.sol";
 import {UniCastVault} from "./UniCastVault.sol";
 import {Initializable} from "./Initializable.sol";
@@ -20,29 +21,22 @@ import {IHooks} from "v4-core/interfaces/IHooks.sol";
 
 import "forge-std/console.sol";
 
-contract UniCastHook is UniCastVolitilityFee, UniCastVault {
+contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
     using LPFeeLibrary for uint24;
+    using PoolIdLibrary for PoolKey;
 
-    // error MustUseDynamicFee();
-
-    // IUniCastOracle public oracle;
-
-    constructor(IPoolManager _poolManager, IUniCastOracle _oracle) 
+    constructor(
+        IPoolManager _poolManager, 
+        IUniCastOracle _oracle
+    ) 
         UniCastVault(_poolManager, _oracle) 
         UniCastVolitilityFee(_poolManager, _oracle) 
         BaseHook(_poolManager) {}
-        // oracle = oracle;
-    // }
 
-    // function initialize(IUniCastOracle oracle, IPoolManager _poolManager) public initializer {
-    //     oracle = oracle;
-    // }
-
-    // Required override function for BaseHook to let the PoolManager know which hooks are implemented
     function getHookPermissions()
         public
         pure
-        override(UniCastVolitilityFee, UniCastVault)
+        override
         returns (Hooks.Permissions memory)
     {
         return
@@ -71,21 +65,27 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault {
         bytes calldata data
     )  
         external 
-        override(UniCastVolitilityFee, UniCastVault) 
+        override
         returns (bytes4) 
     {
-        UniCastVault(address(this)).beforeInitialize(
-            sender,
-            key,
-            sqrtPriceX96,
-            data
+        if (!key.fee.isDynamicFee()) revert MustUseDynamicFee();
+        PoolId poolId = key.toId();
+        string memory tokenSymbol = string(
+            abi.encodePacked(
+                "UniV4",
+                "-",
+                IERC20Metadata(Currency.unwrap(key.currency0)).symbol(),
+                "-",
+                IERC20Metadata(Currency.unwrap(key.currency1)).symbol(),
+                "-",
+                Strings.toString(uint256(key.fee))
+            )
         );
-        UniCastVolitilityFee(address(this)).beforeInitialize(
-            sender,
-            key,
-            sqrtPriceX96,
-            data
-        );
+        UniswapV4ERC20 poolToken = new UniswapV4ERC20(tokenSymbol, tokenSymbol);
+        poolInfos[poolId] = PoolInfo({
+            hasAccruedFees: false,
+            poolToken: poolToken
+        });
         return IHooks.beforeInitialize.selector;
     }
 
@@ -96,11 +96,12 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault {
         bytes calldata data
     ) 
         external  
-        override(UniCastVault, BaseHook)
+        override
         returns (bytes4) 
     {
-        return 
-            UniCastVault(address(this)).beforeAddLiquidity(sender, key, params, data);
+        if (sender != address(this)) revert SenderMustBeHook();
+
+        return IHooks.beforeAddLiquidity.selector;
     }
 
     function beforeSwap(
@@ -110,13 +111,20 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault {
         bytes calldata data
     )
         external
-        override(UniCastVolitilityFee, UniCastVault)
+        override
         poolManagerOnly
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        (bytes4 selector1, BeforeSwapDelta delta1, uint24 fee1) = UniCastVault(address(this)).beforeSwap(sender, key, params, data);
-        (bytes4 selector2, BeforeSwapDelta delta2, uint24 fee2) = UniCastVolitilityFee(address(this)).beforeSwap(sender, key, params, data);
-        return (IHooks.beforeSwap.selector, delta1, fee1 + fee2); 
+        uint24 fee = getFee();
+        if (BASE_FEE < fee) poolManagerFee.updateDynamicLPFee(key, fee);
+        PoolId poolId = key.toId();
+
+        if (!poolInfos[poolId].hasAccruedFees) {
+            PoolInfo storage pool = poolInfos[poolId];
+            pool.hasAccruedFees = true;
+        }
+
+        return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
     function afterSwap(
@@ -128,18 +136,25 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault {
     ) 
         external 
         virtual 
-        override(UniCastVault, BaseHook)
+        override
         poolManagerOnly 
         returns (bytes4, int128) 
     {
-        return UniCastVault(address(this)).afterSwap(sender, poolKey, params, delta, data);
+        PoolId poolId = poolKey.toId();
+        PoolInfo storage poolInfo = poolInfos[poolId];
+
+        poolInfo.hasAccruedFees = true;
+
+        autoRebalance(poolKey);
+
+        return (IHooks.afterSwap.selector, 0);
     }
 
     function unlockCallback(bytes calldata rawData)
         external
-        override(UniCastVault, BaseHook)
+        override
         returns (bytes memory)
     {
-        return UniCastVault(address(this)).unlockCallback(rawData);
+        return _unlockVaultCallback(rawData);
     }
 }
