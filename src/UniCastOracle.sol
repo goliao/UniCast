@@ -2,9 +2,9 @@ pragma solidity ^0.8.25;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
-import {IVolatilityOracle} from "./interface/IVolatilityOracle.sol";
+import {IUniCastOracle, LiquidityData} from "./interface/IUniCastOracle.sol";
 
-contract Oracle is Ownable, IVolatilityOracle {
+contract UniCastOracle is Ownable, IUniCastOracle {
     uint24 public impliedVol;
     address public keeper;
     
@@ -12,12 +12,6 @@ contract Oracle is Ownable, IVolatilityOracle {
     event VolEvent(uint256 value);
 
     error Unauthorized();
-
-    struct LiquidityData {
-        int24 tickLower;
-        int24 tickUpper;
-        int256 liquidityDelta;   
-    }
 
     mapping (PoolId => LiquidityData) public liquidityData;
 
@@ -36,6 +30,10 @@ contract Oracle is Ownable, IVolatilityOracle {
             tickUpper: _tickUpper,
             liquidityDelta: _liquidityDelta
         });
+    }
+
+    function getLiquidityData(PoolId _poolId) external view returns (LiquidityData memory) {
+        return liquidityData[_poolId];
     }
 
     function setImpliedVol(uint24 _impliedVol) external onlyKeeper {

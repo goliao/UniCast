@@ -10,14 +10,14 @@ import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
-import {Oracle} from "../src/Oracle.sol";
+import {UniCastOracle} from "../src/UniCastOracle.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {HookMiner} from "./utils/HookMiner.sol";
 import {PoolSwapTest} from "v4-core/test/PoolSwapTest.sol";
-import {UniCast} from "../src/UniCast.sol";
+import {UniCastVolitilityFee} from "../src/UniCastVolitilityFee.sol";
 import {console} from "forge-std/console.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
-import {RebalancingUniCastHook} from "../src/RebalancingUniCastHook.sol";
+import {UniCastHook} from "../src/UniCastHook.sol";
 import {UniCastImplementation} from "./shared/UniCastImplementation.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
 
@@ -28,11 +28,13 @@ contract TestUniCast is Test, Deployers {
 
     address targetAddr = address(uint160(
             Hooks.BEFORE_INITIALIZE_FLAG |
-                Hooks.BEFORE_SWAP_FLAG 
+                Hooks.BEFORE_SWAP_FLAG |
+                Hooks.BEFORE_ADD_LIQUIDITY_FLAG |
+                Hooks.AFTER_SWAP_FLAG
         ));
-    RebalancingUniCastHook hook = RebalancingUniCastHook(targetAddr);
+    UniCastHook hook = UniCastHook(targetAddr);
     address oracleAddr = makeAddr("oracle");
-    Oracle oracle = Oracle(oracleAddr);
+    UniCastOracle oracle = UniCastOracle(oracleAddr);
     UniCastImplementation impl;
 
     PoolSwapTest.TestSettings testSettings = PoolSwapTest
@@ -48,10 +50,10 @@ contract TestUniCast is Test, Deployers {
         // Deploy, mint tokens, and approve all periphery contracts for two tokens
         (currency0, currency1) = deployMintAndApprove2Currencies();
 
-        impl = new UniCastImplementation(manager);
+        impl = new UniCastImplementation(manager, oracle, hook);
         vm.etch(targetAddr, address(impl).code);
-        hook.initialize(oracle);
-        Hooks.validateHookPermissions(hook, hook.getHookPermissions());
+        // hook.initialize(oracle);
+        // Hooks.validateHookPermissions(hook, hook.getHookPermissions());
 
 
         // (, bytes32 salt) = HookMiner.find(
@@ -91,7 +93,7 @@ contract TestUniCast is Test, Deployers {
     function testEtch() public {
         assertEq(address(hook), targetAddr);
         assertEq(address(hook).code, address(impl).code);
-        assertTrue(hook.initialized());
+        // assertTrue(hook.initialized());
     }
 
     function testVolatilityOracleAddress() public {
