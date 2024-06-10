@@ -76,10 +76,10 @@ contract TestUniCast is Test, Deployers {
         );
         emit log_uint(key.fee);
 
-        address gordan = makeAddr("gordan");
-        vm.startPrank(gordan);
-        token0.mint(gordan, 10000 ether);
-        token1.mint(gordan, 10000 ether);
+        address gordon = makeAddr("gordon");
+        vm.startPrank(gordon);
+        token0.mint(gordon, 10000 ether);
+        token1.mint(gordon, 10000 ether);
         token0.approve(address(hook), type(uint256).max);
         token1.approve(address(hook), type(uint256).max);
 
