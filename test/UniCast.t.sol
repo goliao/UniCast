@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.25;
 
 import {Test} from "forge-std/Test.sol";
 import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
@@ -12,17 +12,13 @@ import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {UniCastOracle} from "../src/UniCastOracle.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
-import {HookMiner} from "./utils/HookMiner.sol";
 import {PoolSwapTest} from "v4-core/test/PoolSwapTest.sol";
 import {UniCastVolitilityFee} from "../src/UniCastVolitilityFee.sol";
 import {console} from "forge-std/console.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {UniCastHook} from "../src/UniCastHook.sol";
 import {LiquidityData} from "../src/interface/IUniCastOracle.sol";
-import {UniCastImplementation} from "./shared/UniCastImplementation.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
-import {MockERC20} from "solmate/test/utils/mocks/MockERC20.sol";
-import "forge-std/console.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import {StateLibrary} from "../src/util/StateLibrary.sol";

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.25;
 
 import {BaseHook} from "v4-periphery/BaseHook.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
@@ -8,18 +8,16 @@ import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {UniCastVolitilityFee} from "./UniCastVolitilityFee.sol";
 import {UniCastVault} from "./UniCastVault.sol";
-import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {IUniCastOracle} from "./interface/IUniCastOracle.sol";
+import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import {CurrencyLibrary, Currency} from "v4-core/types/Currency.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UniswapV4ERC20} from "v4-periphery/libraries/UniswapV4ERC20.sol";
 import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {StateLibrary} from "./util/StateLibrary.sol";
-
-import "forge-std/console.sol";
 
 contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
     using LPFeeLibrary for uint24;
