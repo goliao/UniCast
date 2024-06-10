@@ -18,14 +18,19 @@ import {UniCastVolitilityFee} from "../src/UniCastVolitilityFee.sol";
 import {console} from "forge-std/console.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {UniCastHook} from "../src/UniCastHook.sol";
+import {LiquidityData} from "../src/interface/IUniCastOracle.sol";
 import {UniCastImplementation} from "./shared/UniCastImplementation.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
 import {MockERC20} from "solmate/test/utils/mocks/MockERC20.sol";
 import "forge-std/console.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
+import {StateLibrary} from "../src/util/StateLibrary.sol";
 
 contract TestUniCast is Test, Deployers {
     using CurrencyLibrary for Currency;
     using PoolIdLibrary for PoolKey;
+    using StateLibrary for IPoolManager; 
 
     address targetAddr = address(uint160(
             Hooks.BEFORE_INITIALIZE_FLAG |
@@ -38,6 +43,8 @@ contract TestUniCast is Test, Deployers {
     UniCastOracle oracle = UniCastOracle(oracleAddr);
     MockERC20 token0;
     MockERC20 token1;
+
+    error MustUseDynamicFee();
 
     PoolSwapTest.TestSettings testSettings = PoolSwapTest
         .TestSettings({
@@ -76,6 +83,7 @@ contract TestUniCast is Test, Deployers {
         );
         emit log_uint(key.fee);
 
+        // issue liquidity and allowance
         address gordon = makeAddr("gordon");
         vm.startPrank(gordon);
         token0.mint(gordon, 10000 ether);
@@ -101,23 +109,56 @@ contract TestUniCast is Test, Deployers {
         assertEq(fee, 500 * 1.5);
     }
 
-    function testSwap() public {
-        // IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-        //     zeroForOne: true,
-        //     amountSpecified: -0.01 ether,
-        //     sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
-        // });
-        // // 1. Conduct a swap at baseline vol
-        // // This should just use `BASE_FEE` 
-        // uint256 balanceOfToken1Before = currency1.balanceOfSelf();
-        // swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-        // uint256 balanceOfToken1After = currency1.balanceOfSelf();
-        // uint256 outputFromBaseFeeSwap = balanceOfToken1After -
-        //     balanceOfToken1Before;
-        
-        // console.log("outputFromBaseFeeSwap:", outputFromBaseFeeSwap);
-        // console.log("balanceOfToken1After:", balanceOfToken1After);
+    function testBeforeInitializeRevertsIfNotDynamic() public {
+        vm.expectRevert(abi.encodeWithSelector(MustUseDynamicFee.selector));
+        initPool(
+            currency0,
+            currency1,
+            hook,
+            100, // Set the `DYNAMIC_FEE_FLAG` in place of specifying a fixed fee
+            SQRT_PRICE_1_1,
+            ZERO_BYTES
+        );
+    }
 
-        // assertGt(balanceOfToken1After, balanceOfToken1Before);
+    function testBeforeSwapVolatile() public {
+        PoolId poolId = key.toId();
+        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getVolatility.selector), abi.encode(uint24(150)));
+        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId), abi.encode(LiquidityData(-100, 100, 1000)));
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -0.01 ether,
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+        // 1. Conduct a swap at baseline vol
+        // This should just use `BASE_FEE` 
+        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+        assertEq(_fetchPoolLPFee(key), 500 * 1.5);
+        (bool accruedFees,) = hook.poolInfos(poolId);
+        assertEq(accruedFees, true);
+    }
+
+    function testBeforeSwapUpdateFee() public {
+
+    }
+
+    function testBeforeSwapNotVolatile() public {
+        PoolId poolId = key.toId();
+        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getVolatility.selector), abi.encode(uint24(100)));
+        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId), abi.encode(LiquidityData(-100, 100, 1000)));
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -0.01 ether,
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+        // 1. Conduct a swap at baseline vol
+        // This should just use `BASE_FEE` 
+        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+        assertEq(_fetchPoolLPFee(key), 500);
+    }
+
+    function _fetchPoolLPFee(PoolKey memory _key) internal view returns (uint256 lpFee) {
+        PoolId id = _key.toId();
+        (,,, lpFee) = manager.getSlot0(id);
     }
 }

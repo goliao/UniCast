@@ -17,12 +17,14 @@ import {CurrencyLibrary, Currency} from "v4-core/types/Currency.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UniswapV4ERC20} from "v4-periphery/libraries/UniswapV4ERC20.sol";
 import {IHooks} from "v4-core/interfaces/IHooks.sol";
+import {StateLibrary} from "./util/StateLibrary.sol";
 
 import "forge-std/console.sol";
 
 contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
     using LPFeeLibrary for uint24;
     using PoolIdLibrary for PoolKey;
+    using StateLibrary for IPoolManager;
 
     constructor(
         IPoolManager _poolManager, 
@@ -104,19 +106,20 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
     }
 
     function beforeSwap(
-        address sender,
+        address,
         PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
-        bytes calldata data
+        IPoolManager.SwapParams calldata,
+        bytes calldata
     )
         external
         override
         poolManagerOnly
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        uint24 fee = getFee();
-        if (BASE_FEE < fee) poolManagerFee.updateDynamicLPFee(key, fee);
         PoolId poolId = key.toId();
+        uint24 fee = getFee();
+        (,,,uint24 currentFee) = poolManagerFee.getSlot0(poolId);
+        if (currentFee != fee) poolManagerFee.updateDynamicLPFee(key, fee);
 
         if (!poolInfos[poolId].hasAccruedFees) {
             PoolInfo storage pool = poolInfos[poolId];
@@ -127,11 +130,11 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
     }
 
     function afterSwap(
-        address sender,
+        address,
         PoolKey calldata poolKey,
-        IPoolManager.SwapParams calldata params,
-        BalanceDelta delta,
-        bytes calldata data
+        IPoolManager.SwapParams calldata,
+        BalanceDelta,
+        bytes calldata
     ) 
         external 
         virtual 
@@ -139,11 +142,6 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
         poolManagerOnly 
         returns (bytes4, int128) 
     {
-        PoolId poolId = poolKey.toId();
-        PoolInfo storage poolInfo = poolInfos[poolId];
-
-        poolInfo.hasAccruedFees = true;
-
         autoRebalance(poolKey);
 
         return (IHooks.afterSwap.selector, 0);
