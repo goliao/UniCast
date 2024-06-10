@@ -65,7 +65,6 @@ contract TestUniCast is Test, Deployers {
 
         emit log_address(address(hook));
 
-
         // Initialize a pool
         (key, ) = initPool(
             currency0,
@@ -77,24 +76,14 @@ contract TestUniCast is Test, Deployers {
         );
         emit log_uint(key.fee);
 
-        address charlie = makeAddr("charlie");
-        vm.startPrank(charlie);
-        token0.mint(charlie, 10000 ether);
-        token1.mint(charlie, 10000 ether);
+        address gordan = makeAddr("gordan");
+        vm.startPrank(gordan);
+        token0.mint(gordan, 10000 ether);
+        token1.mint(gordan, 10000 ether);
         token0.approve(address(hook), type(uint256).max);
         token1.approve(address(hook), type(uint256).max);
 
-        // Add some liquidity
-        // modifyLiquidityRouter.modifyLiquidity(
-        //     key,
-        //     IPoolManager.ModifyLiquidityParams({
-        //         tickLower: -600,
-        //         tickUpper: 600,
-        //         liquidityDelta: 100 ether,
-        //         salt:0
-        //     }),
-        //     ZERO_BYTES
-        // );
+        hook.addLiquidity(key, 10 ether, 10 ether);
         vm.stopPrank();
     }
 

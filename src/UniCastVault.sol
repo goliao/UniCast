@@ -48,7 +48,7 @@ abstract contract UniCastVault {
 
     int256 internal constant MAX_INT = type(int256).max;
     uint16 internal constant MINIMUM_LIQUIDITY = 1000;
-    int24 internal constant MIN_TICK = -887272;
+    int24 internal constant MIN_TICK = -887220;
     int24 internal constant MAX_TICK = -MIN_TICK;
     bytes internal constant ZERO_BYTES = "";
     bool poolRebalancing;
@@ -221,6 +221,7 @@ abstract contract UniCastVault {
             poolInfo.hasAccruedFees = false;
         } else {
             (delta,) = poolManagerVault.modifyLiquidity(data.key, data.params, ZERO_BYTES);
+            _settleDeltas(data.sender, data.key, delta);
         }
         return abi.encode(delta);
     }
@@ -278,6 +279,11 @@ abstract contract UniCastVault {
         userBalance = currency.balanceOf(user);
         poolBalance = currency.balanceOf(address(poolManagerVault));
         delta = poolManagerVault.currencyDelta(deltaHolder, currency);
+    }
+
+    function _settleDeltas(address sender, PoolKey memory key, BalanceDelta delta) internal {
+        _settle(key.currency0, poolManagerVault, sender, uint256(int256(-delta.amount0())), false);
+        _settle(key.currency1, poolManagerVault, sender, uint256(int256(-delta.amount1())), false);
     }
 
     function _settle(Currency currency, IPoolManager manager, address payer, uint256 amount, bool burn) internal {
