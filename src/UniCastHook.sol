@@ -26,6 +26,11 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
 
+    /**
+     * @dev Constructor for the UniCastHook contract.
+     * @param _poolManager The address of the pool manager.
+     * @param _oracle The address of the oracle.
+     */
     constructor(
         IPoolManager _poolManager, 
         IUniCastOracle _oracle
@@ -34,6 +39,10 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
         UniCastVolitilityFee(_poolManager, _oracle) 
         BaseHook(_poolManager) {}
 
+    /**
+     * @dev Returns the permissions for the hook.
+     * @return A Hooks.Permissions struct with the permissions.
+     */
     function getHookPermissions()
         public
         pure
@@ -59,6 +68,14 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
             });
     }
 
+    /**
+     * @dev Hook that is called before pool initialization.
+     * @param sender The address of the sender.
+     * @param key The pool key.
+     * @param sqrtPriceX96 The square root price.
+     * @param data Additional data.
+     * @return A bytes4 selector.
+     */
     function beforeInitialize(
         address sender,
         PoolKey calldata key,
@@ -90,6 +107,14 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
         return IHooks.beforeInitialize.selector;
     }
 
+    /**
+     * @dev Hook that is called before adding liquidity.
+     * @param sender The address of the sender.
+     * @param key The pool key.
+     * @param params The liquidity parameters.
+     * @param data Additional data.
+     * @return A bytes4 selector.
+     */
     function beforeAddLiquidity(
         address sender,
         PoolKey calldata key,
@@ -105,6 +130,11 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
         return IHooks.beforeAddLiquidity.selector;
     }
 
+    /**
+     * @dev Hook that is called before a swap.
+     * @param key The pool key.
+     * @return A tuple containing a bytes4 selector, a BeforeSwapDelta, and a uint24 fee.
+     */
     function beforeSwap(
         address,
         PoolKey calldata key,
@@ -129,6 +159,11 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
+    /**
+     * @dev Hook that is called after a swap.
+     * @param poolKey The pool key.
+     * @return A tuple containing a bytes4 selector and an int128 value.
+     */
     function afterSwap(
         address,
         PoolKey calldata poolKey,
@@ -147,6 +182,11 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
         return (IHooks.afterSwap.selector, 0);
     }
 
+    /**
+     * @dev Callback function for unlocking the vault.
+     * @param rawData The raw data.
+     * @return The result of the callback.
+     */
     function unlockCallback(bytes calldata rawData)
         external
         override

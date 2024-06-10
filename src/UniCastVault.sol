@@ -77,6 +77,13 @@ abstract contract UniCastVault {
         liquidityOracle = _oracle;
     } 
 
+    /**
+     * @notice Adds liquidity to the pool.
+     * @param poolKey The key of the pool.
+     * @param amount0 The amount of token0 to add.
+     * @param amount1 The amount of token1 to add.
+     * @return liquidity The amount of liquidity added.
+     */
     function addLiquidity(PoolKey memory poolKey, uint256 amount0, uint256 amount1) 
         external 
         returns (uint128 liquidity)
@@ -128,6 +135,12 @@ abstract contract UniCastVault {
         emit LiquidityAdded(amount0, amount1);
     }
 
+    /**
+     * @notice Removes liquidity from the pool.
+     * @param poolKey The key of the pool.
+     * @param amount0 The amount of token0 to remove.
+     * @param amount1 The amount of token1 to remove.
+     */
     function removeLiquidity(PoolKey memory poolKey, uint256 amount0, uint256 amount1)
         external 
     {
@@ -167,6 +180,10 @@ abstract contract UniCastVault {
         emit LiquidityRemoved(amount0, amount1);
     }
 
+    /**
+     * @notice Automatically rebalances the pool if required.
+     * @param poolKey The key of the pool.
+     */
     function autoRebalance(PoolKey memory poolKey) public {
         PoolId poolId = poolKey.toId();
         PoolInfo storage poolInfo = poolInfos[poolId];
@@ -179,6 +196,11 @@ abstract contract UniCastVault {
         }
     }
 
+    /**
+     * @notice Checks if rebalancing is required for the pool.
+     * @param poolKey The key of the pool.
+     * @return bool True if rebalancing is required, false otherwise.
+     */
     function rebalanceRequired(PoolKey memory poolKey) public view returns (bool) {
         PoolId poolId = poolKey.toId();
         PoolInfo storage poolInfo = poolInfos[poolId];
@@ -188,6 +210,16 @@ abstract contract UniCastVault {
         return true;
     }
 
+    /**
+     * @notice Modifies the liquidity of the pool.
+     * @param poolKey The key of the pool.
+     * @param params The parameters for modifying liquidity.
+     * @param hookData Additional data for the hook.
+     * @param settleUsingBurn Whether to settle using burn.
+     * @param takeClaims Whether to take claims.
+     * @return delta The balance delta after modification.
+     * @return uint256 The ETH balance of the contract.
+     */
     function modifyLiquidity(
         PoolKey memory poolKey,
         IPoolManager.ModifyLiquidityParams memory params,
@@ -205,6 +237,11 @@ abstract contract UniCastVault {
         }
     }
 
+    /**
+     * @notice Callback function for unlocking the vault.
+     * @param rawData The raw data for the callback.
+     * @return bytes The encoded balance delta.
+     */
     function _unlockVaultCallback(bytes calldata rawData)
         internal
         virtual
@@ -226,6 +263,11 @@ abstract contract UniCastVault {
         return abi.encode(delta);
     }
 
+    /**
+     * @notice Modifies the liquidity based on the callback data.
+     * @param modifierData The callback data for modifying liquidity.
+     * @return delta The balance delta after modification.
+     */
     function _modifyLiquidity(CallbackData memory modifierData)
         internal
         returns (BalanceDelta delta)
@@ -271,6 +313,15 @@ abstract contract UniCastVault {
         }
     }
 
+    /**
+     * @notice Fetches the balances of a user and the pool.
+     * @param currency The currency to fetch balances for.
+     * @param user The address of the user.
+     * @param deltaHolder The address holding the delta.
+     * @return userBalance The balance of the user.
+     * @return poolBalance The balance of the pool.
+     * @return delta The balance delta.
+     */
     function _fetchBalances(Currency currency, address user, address deltaHolder)
         internal
         view
@@ -281,11 +332,25 @@ abstract contract UniCastVault {
         delta = poolManagerVault.currencyDelta(deltaHolder, currency);
     }
 
+    /**
+     * @notice Settles the deltas for a given sender and pool key.
+     * @param sender The address of the sender.
+     * @param key The key of the pool.
+     * @param delta The balance delta to settle.
+     */
     function _settleDeltas(address sender, PoolKey memory key, BalanceDelta delta) internal {
         _settle(key.currency0, poolManagerVault, sender, uint256(int256(-delta.amount0())), false);
         _settle(key.currency1, poolManagerVault, sender, uint256(int256(-delta.amount1())), false);
     }
 
+    /**
+     * @notice Settles a given amount of currency.
+     * @param currency The currency to settle.
+     * @param manager The pool manager.
+     * @param payer The address of the payer.
+     * @param amount The amount to settle.
+     * @param burn Whether to burn the amount.
+     */
     function _settle(Currency currency, IPoolManager manager, address payer, uint256 amount, bool burn) internal {
         if (burn) {
             poolManagerVault.burn(payer, currency.toId(), amount);
@@ -302,6 +367,14 @@ abstract contract UniCastVault {
         }
     }
     
+    /**
+     * @notice Takes a given amount of currency.
+     * @param currency The currency to take.
+     * @param manager The pool manager.
+     * @param recipient The address of the recipient.
+     * @param amount The amount to take.
+     * @param claims Whether to take claims.
+     */
     function _take(Currency currency, IPoolManager manager, address recipient, uint256 amount, bool claims) internal {
         if (claims) {
             poolManagerVault.mint(recipient, currency.toId(), amount);
@@ -310,28 +383,10 @@ abstract contract UniCastVault {
         }
     }
 
-    // function _removeLiquidity(PoolKey memory key, IPoolManager.ModifyLiquidityParams memory params)
-    //     internal
-    //     returns (BalanceDelta delta)
-    // {
-    //     PoolId poolId = key.toId();
-    //     PoolInfo storage pool = poolInfos[poolId];
-
-    //     if (pool.hasAccruedFees) {
-    //         _rebalance(key);
-    //     }
-
-    //     uint256 liquidityToRemove = FullMath.mulDiv(
-    //         uint256(-params.liquidityDelta),
-    //         poolManager.getLiquidity(poolId),
-    //         UniswapV4ERC20(pool.poolToken).totalSupply()
-    //     );
-
-    //     params.liquidityDelta = -(liquidityToRemove.toInt256());
-    //     (delta,) = poolManager.modifyLiquidity(key, params, ZERO_BYTES);
-    //     pool.hasAccruedFees = false;
-    // }
-
+    /**
+     * @notice Rebalances the pool.
+     * @param key The key of the pool.
+     */
     function _rebalance(PoolKey memory key) 
         internal 
     {

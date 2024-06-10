@@ -25,15 +25,28 @@ abstract contract UniCastVolitilityFee {
     // The default base fees we will charge
     uint24 public constant BASE_FEE = 500; // 0.05%
 
+    /**
+     * @dev Constructor for the UniCastVolitilityFee contract.
+     * @param _poolManager The address of the pool manager.
+     * @param _oracle The address of the volatility oracle.
+     */
     constructor(IPoolManager _poolManager, IUniCastOracle _oracle) {
         poolManagerFee = _poolManager;
         volitilityOracle = _oracle;
     }
 
+    /**
+     * @dev Returns the address of the volatility oracle.
+     * @return The address of the volatility oracle.
+     */
     function getVolatilityOracle() external view returns (address) {
         return address(volitilityOracle);
     }
 
+    /**
+     * @dev Calculates and returns the fee based on the current volatility.
+     * @return The calculated fee as a uint24.
+     */
     function getFee() public view returns (uint24) {
         uint24 volatility = volitilityOracle.getVolatility();
         return BASE_FEE * volatility / 100;

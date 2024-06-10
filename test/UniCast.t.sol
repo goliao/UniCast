@@ -95,11 +95,11 @@ contract TestUniCast is Test, Deployers {
         vm.stopPrank();
     }
 
-    function testEtch() public {
+    function testEtch() public view {
         assertEq(address(hook), targetAddr);
     }
 
-    function testVolatilityOracleAddress() public {
+    function testVolatilityOracleAddress() public view {
         assertEq(oracleAddr, address(hook.getVolatilityOracle()));
     }
     function testGetFeeWithVolatility() public {
@@ -161,4 +161,70 @@ contract TestUniCast is Test, Deployers {
         PoolId id = _key.toId();
         (,,, lpFee) = manager.getSlot0(id);
     }
+
+    function testAddLiquidity() public {
+        address alice = makeAddr("alice");
+        vm.startPrank(alice);
+        token0.mint(alice, 1000 ether);
+        token1.mint(alice, 1000 ether);
+        token0.approve(address(hook), type(uint256).max);
+        token1.approve(address(hook), type(uint256).max);
+
+        uint128 liquidity = hook.addLiquidity(key, 1.5 ether, 1.5 ether);
+        assertEq(liquidity, 1.5 ether, "Liquidity should be exactly 150");
+
+        vm.stopPrank();
+    }
+
+    function testAddLiquidityNegative() public {
+        address alice = makeAddr("alice");
+        vm.startPrank(alice);
+        token0.mint(alice, 0.5 ether); // Insufficient amount
+        token1.mint(alice, 0.5 ether); // Insufficient amount
+        token0.approve(address(hook), type(uint256).max);
+        token1.approve(address(hook), type(uint256).max);
+
+        vm.expectRevert();
+        hook.addLiquidity(key, 1.5 ether, 1.5 ether); 
+
+        vm.stopPrank();
+    }
+
+    function testRemoveLiquidity() public {
+        address bob = makeAddr("bob");
+        vm.startPrank(bob);
+        token0.mint(bob, 1000 ether);
+        token1.mint(bob, 1000 ether);
+        token0.approve(address(hook), type(uint256).max);
+        token1.approve(address(hook), type(uint256).max);
+
+        uint128 liquidity = hook.addLiquidity(key, 1.5 ether, 1.5 ether);
+        assertEq(liquidity, 1.5 ether, "Liquidity should be exactly 150");
+
+        hook.removeLiquidity(key, 0.5 ether, 1 ether);
+
+        uint256 balance0 = token0.balanceOf(bob);
+        uint256 balance1 = token1.balanceOf(bob);
+        assertApproxEqAbs(balance0, 998.5 ether, 0.5 ether, "Token0 balance should be approximately 998.5 ether after removing liquidity");
+        assertApproxEqAbs(balance1, 999 ether, 0.5 ether, "Token1 balance should be approximately 999 ether after removing liquidity");
+        vm.stopPrank();
+    }
+
+    function testRemoveLiquidityNegative() public {
+        address bob = makeAddr("bob");
+        vm.startPrank(bob);
+        token0.mint(bob, 1000 ether);
+        token1.mint(bob, 1000 ether);
+        token0.approve(address(hook), type(uint256).max);
+        token1.approve(address(hook), type(uint256).max);
+
+        uint128 liquidity = hook.addLiquidity(key, 1.5 ether, 1.5 ether);
+        assertEq(liquidity, 1.5 ether, "Liquidity should be exactly 150");
+
+        vm.expectRevert();
+        hook.removeLiquidity(key, 2 ether, 2 ether);
+        vm.stopPrank();
+    }
+
+    
 }
