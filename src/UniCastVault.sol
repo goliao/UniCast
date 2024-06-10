@@ -24,19 +24,19 @@ import {SafeCast} from "v4-core/libraries/SafeCast.sol";
 import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {TransientStateLibrary} from "v4-core/libraries/TransientStateLibrary.sol";
+import {IUniCastOracle, LiquidityData} from "./interface/IUniCastOracle.sol";
 
-import "forge-std/console.sol";
-
-contract Vault is BaseHook {
+abstract contract UniCastVault {
     using LPFeeLibrary for uint24;
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
+    using TransientStateLibrary for IPoolManager;
     using SafeCast for uint256;
     using SafeCast for uint128;
     using CurrencyLibrary for Currency;
     using SafeERC20 for IERC20;
     
-    error MustUseDynamicFee();
     event LiquidityAdded(uint256 amount0, uint256 amount1);
     event LiquidityRemoved(uint256 amount0, uint256 amount1);
 
@@ -53,10 +53,16 @@ contract Vault is BaseHook {
     bytes internal constant ZERO_BYTES = "";
     bool poolRebalancing;
 
+    IPoolManager public immutable poolManagerVault;
+    IUniCastOracle public liquidityOracle;
+
     struct CallbackData {
         address sender;
         PoolKey key;
         IPoolManager.ModifyLiquidityParams params;
+        bytes hookData;
+        bool settleUsingBurn;
+        bool takeClaims;
     }
 
     struct PoolInfo {
@@ -66,95 +72,10 @@ contract Vault is BaseHook {
 
     mapping(PoolId => PoolInfo) public poolInfos;
 
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
-
-    function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
-        return Hooks.Permissions({
-            beforeInitialize: true,
-            afterInitialize: false,
-            beforeAddLiquidity: true,
-            afterAddLiquidity: false,
-            beforeRemoveLiquidity: false,
-            afterRemoveLiquidity: false,
-            beforeSwap: true,
-            afterSwap: true,
-            beforeDonate: false,
-            afterDonate: false,
-            beforeSwapReturnDelta: false,
-            afterSwapReturnDelta: false,
-            afterAddLiquidityReturnDelta: false,
-            afterRemoveLiquidityReturnDelta: false
-        });
-    }
-
-    function beforeInitialize(
-        address,
-        PoolKey calldata key,
-        uint160,
-        bytes calldata
-    ) external override poolManagerOnly returns (bytes4) {
-        PoolId poolId = key.toId();
-        string memory tokenSymbol = string(
-            abi.encodePacked(
-                "UniV4",
-                "-",
-                IERC20Metadata(Currency.unwrap(key.currency0)).symbol(),
-                "-",
-                IERC20Metadata(Currency.unwrap(key.currency1)).symbol(),
-                "-",
-                Strings.toString(uint256(key.fee))
-            )
-        );
-        UniswapV4ERC20 poolToken = new UniswapV4ERC20(tokenSymbol, tokenSymbol);
-        poolInfos[poolId] = PoolInfo({
-            hasAccruedFees: false,
-            poolToken: poolToken
-        });
-        return IHooks.beforeInitialize.selector;
-    }
-
-    function beforeAddLiquidity(
-        address sender,
-        PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) external view override returns (bytes4) {
-        if (sender != address(this)) revert SenderMustBeHook();
-
-        return Vault.beforeAddLiquidity.selector;
-    }
-
-    function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
-        external
-        override
-        returns (bytes4, BeforeSwapDelta, uint24)
-    {
-        PoolId poolId = key.toId();
-
-        if (!poolInfos[poolId].hasAccruedFees) {
-            PoolInfo storage pool = poolInfos[poolId];
-            pool.hasAccruedFees = true;
-        }
-
-        return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
-    }
-
-    function afterSwap(
-        address,
-        PoolKey calldata poolKey,
-        IPoolManager.SwapParams calldata,
-        BalanceDelta,
-        bytes calldata
-    ) external virtual override poolManagerOnly returns (bytes4, int128) {
-        PoolId poolId = poolKey.toId();
-        PoolInfo storage poolInfo = poolInfos[poolId];
-
-        poolInfo.hasAccruedFees = true;
-
-        autoRebalance(poolKey);
-
-        return (IHooks.afterSwap.selector, 0);
-    }
+    constructor(IPoolManager _poolManager, IUniCastOracle _oracle) {
+        poolManagerVault = _poolManager;
+        liquidityOracle = _oracle;
+    } 
 
     function addLiquidity(PoolKey memory poolKey, uint256 amount0, uint256 amount1) 
         external 
@@ -162,11 +83,11 @@ contract Vault is BaseHook {
     {
         PoolId poolId = poolKey.toId();
 
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
+        (uint160 sqrtPriceX96,,,) = poolManagerVault.getSlot0(poolId);
 
         if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
-        uint128 poolLiquidity = poolManager.getLiquidity(poolId);
+        uint128 poolLiquidity = poolManagerVault.getLiquidity(poolId);
 
         liquidity = LiquidityAmounts.getLiquidityForAmounts(
             sqrtPriceX96,
@@ -180,7 +101,7 @@ contract Vault is BaseHook {
             revert LiquidityDoesntMeetMinimum();
         }
 
-        (BalanceDelta addedDelta, ) = poolManager.modifyLiquidity(
+        (BalanceDelta addedDelta, ) = modifyLiquidity(
             poolKey,
             IPoolManager.ModifyLiquidityParams({
                 tickLower: MIN_TICK,
@@ -188,7 +109,9 @@ contract Vault is BaseHook {
                 liquidityDelta: liquidity.toInt256(),
                 salt: 0
             }),
-            ZERO_BYTES
+            ZERO_BYTES,
+            false,
+            false
         );
 
         if (poolLiquidity == 0) {
@@ -210,7 +133,7 @@ contract Vault is BaseHook {
     {
         PoolId poolId = poolKey.toId();
 
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
+        (uint160 sqrtPriceX96,,,) = poolManagerVault.getSlot0(poolId);
 
         if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
@@ -222,7 +145,7 @@ contract Vault is BaseHook {
             amount1
         );
 
-        (BalanceDelta delta, ) = poolManager.modifyLiquidity(
+        (BalanceDelta delta, ) = modifyLiquidity(
             poolKey,
             IPoolManager.ModifyLiquidityParams({
                 tickLower: MIN_TICK,
@@ -230,7 +153,9 @@ contract Vault is BaseHook {
                 liquidityDelta: -(liquidityToRemove.toInt256()),
                 salt: 0
             }),
-            ZERO_BYTES
+            ZERO_BYTES,
+            true,
+            false
         );
 
         UniswapV4ERC20(poolInfos[poolId].poolToken).burn(msg.sender, uint256(liquidityToRemove));
@@ -257,85 +182,160 @@ contract Vault is BaseHook {
     function rebalanceRequired(PoolKey memory poolKey) public view returns (bool) {
         PoolId poolId = poolKey.toId();
         PoolInfo storage poolInfo = poolInfos[poolId];
-        (, int24 currentTick,, ) = poolManager.getSlot0(poolId);
+        (, int24 currentTick,, ) = poolManagerVault.getSlot0(poolId);
 
-        // TODO: define rebalance conditions
+        LiquidityData memory liquidityData = liquidityOracle.getLiquidityData(poolId);
         return true;
     }
 
-    function unlockCallback(bytes calldata rawData)
-        external
-        override
+    function modifyLiquidity(
+        PoolKey memory poolKey,
+        IPoolManager.ModifyLiquidityParams memory params,
+        bytes memory hookData,
+        bool settleUsingBurn,
+        bool takeClaims
+    ) internal returns (BalanceDelta delta, uint256) {
+        delta = abi.decode(
+            poolManagerVault.unlock(abi.encode(CallbackData(msg.sender, poolKey, params, hookData, settleUsingBurn, takeClaims))),
+            (BalanceDelta)
+            );
+        uint256 ethBalance = address(this).balance;
+        if (ethBalance > 0) {
+            CurrencyLibrary.NATIVE.transfer(msg.sender, ethBalance);
+        }
+    }
+
+    function _unlockVaultCallback(bytes calldata rawData)
+        internal
+        virtual
         returns (bytes memory)
     {
+        require(msg.sender == address(poolManagerVault), "Callback not called by manager");
+        
         CallbackData memory data = abi.decode(rawData, (CallbackData));
         BalanceDelta delta;
+        PoolInfo storage poolInfo = poolInfos[data.key.toId()];
 
         if (data.params.liquidityDelta < 0) {
-            delta = _removeLiquidity(data.key, data.params);
-            _takeDeltas(data.sender, data.key, delta);
+            delta = _modifyLiquidity(data);
+            poolInfo.hasAccruedFees = false;
         } else {
-            (delta,) = poolManager.modifyLiquidity(data.key, data.params, ZERO_BYTES);
-            _settleDeltas(data.sender, data.key, delta);
+            (delta,) = poolManagerVault.modifyLiquidity(data.key, data.params, ZERO_BYTES);
         }
         return abi.encode(delta);
     }
 
-    function _settleDeltas(address sender, PoolKey memory key, BalanceDelta delta) internal {
-        if (sender == address(this)) {
-            key.currency0.transfer(address(poolManager), uint256(int256(-delta.amount0())));
-            key.currency1.transfer(address(poolManager), uint256(int256(-delta.amount1())));
-        } else {
-            IERC20(Currency.unwrap(key.currency0)).safeTransferFrom(
-                sender,
-                address(poolManager),
-                uint256(int256(-delta.amount0()))
-            );
-            IERC20(Currency.unwrap(key.currency1)).safeTransferFrom(
-                sender,
-                address(poolManager),
-                uint256(int256(-delta.amount1()))
-            );
-        }
-        poolManager.settle(key.currency0);
-        poolManager.settle(key.currency1);
-    }
-
-    function _takeDeltas(address sender, PoolKey memory key, BalanceDelta delta) internal {
-        poolManager.take(key.currency0, sender, uint256(uint128(delta.amount0())));
-        poolManager.take(key.currency1, sender, uint256(uint128(delta.amount1())));
-    }
-
-    function _removeLiquidity(PoolKey memory key, IPoolManager.ModifyLiquidityParams memory params)
+    function _modifyLiquidity(CallbackData memory modifierData)
         internal
         returns (BalanceDelta delta)
     {
-        PoolId poolId = key.toId();
-        PoolInfo storage pool = poolInfos[poolId];
+        uint128 liquidityBefore = poolManagerVault.getPosition(
+            modifierData.key.toId(),
+            address(this),
+            modifierData.params.tickLower,
+            modifierData.params.tickUpper,
+            modifierData.params.salt
+        ).liquidity;
+        (delta,) = poolManagerVault.modifyLiquidity(modifierData.key, modifierData.params, modifierData.hookData);
+        uint128 liquidityAfter = poolManagerVault.getPosition(
+            modifierData.key.toId(),
+            address(this),
+            modifierData.params.tickLower,
+            modifierData.params.tickUpper,
+            modifierData.params.salt
+        ).liquidity;
 
-        if (pool.hasAccruedFees) {
-            _rebalance(key);
+        (,, int256 delta0) = _fetchBalances(modifierData.key.currency0, modifierData.sender, address(this));
+        (,, int256 delta1) = _fetchBalances(modifierData.key.currency1, modifierData.sender, address(this));
+
+        require( 
+            int128(liquidityAfter) == 
+            int128(liquidityBefore) + modifierData.params.liquidityDelta, 
+            "Incorrect liquidity after adding" );
+
+        if (delta0 != 0) {
+            if (delta0 < 0) {
+                _settle(modifierData.key.currency0, poolManagerVault, modifierData.sender, uint256(-delta0), modifierData.settleUsingBurn);
+            } else {
+                _take(modifierData.key.currency0, poolManagerVault, modifierData.sender, uint256(delta0), modifierData.takeClaims);
+            }
         }
 
-        uint256 liquidityToRemove = FullMath.mulDiv(
-            uint256(-params.liquidityDelta),
-            poolManager.getLiquidity(poolId),
-            UniswapV4ERC20(pool.poolToken).totalSupply()
-        );
-
-        params.liquidityDelta = -(liquidityToRemove.toInt256());
-        (delta,) = poolManager.modifyLiquidity(key, params, ZERO_BYTES);
-        pool.hasAccruedFees = false;
+        if (delta1 != 0) {
+            if (delta1 < 0) {
+                _settle(modifierData.key.currency1, poolManagerVault, modifierData.sender, uint256(-delta1), modifierData.settleUsingBurn);
+            } else {
+                _take(modifierData.key.currency1, poolManagerVault, modifierData.sender, uint256(delta1), modifierData.takeClaims);
+            }
+        }
     }
 
-    function _rebalance(PoolKey memory key) public {
+    function _fetchBalances(Currency currency, address user, address deltaHolder)
+        internal
+        view
+        returns (uint256 userBalance, uint256 poolBalance, int256 delta)
+    {
+        userBalance = currency.balanceOf(user);
+        poolBalance = currency.balanceOf(address(poolManagerVault));
+        delta = poolManagerVault.currencyDelta(deltaHolder, currency);
+    }
+
+    function _settle(Currency currency, IPoolManager manager, address payer, uint256 amount, bool burn) internal {
+        if (burn) {
+            poolManagerVault.burn(payer, currency.toId(), amount);
+        } else if (currency.isNative()) {
+            poolManagerVault.settle{value: amount}(currency);
+        } else {
+            poolManagerVault.sync(currency);
+            if (payer != address(this)) {
+                IERC20(Currency.unwrap(currency)).transferFrom(payer, address(poolManagerVault), amount);
+            } else {
+                IERC20(Currency.unwrap(currency)).transfer(address(poolManagerVault), amount);
+            }
+            poolManagerVault.settle(currency);
+        }
+    }
+    
+    function _take(Currency currency, IPoolManager manager, address recipient, uint256 amount, bool claims) internal {
+        if (claims) {
+            poolManagerVault.mint(recipient, currency.toId(), amount);
+        } else {
+            poolManagerVault.take(currency, recipient, amount);
+        }
+    }
+
+    // function _removeLiquidity(PoolKey memory key, IPoolManager.ModifyLiquidityParams memory params)
+    //     internal
+    //     returns (BalanceDelta delta)
+    // {
+    //     PoolId poolId = key.toId();
+    //     PoolInfo storage pool = poolInfos[poolId];
+
+    //     if (pool.hasAccruedFees) {
+    //         _rebalance(key);
+    //     }
+
+    //     uint256 liquidityToRemove = FullMath.mulDiv(
+    //         uint256(-params.liquidityDelta),
+    //         poolManager.getLiquidity(poolId),
+    //         UniswapV4ERC20(pool.poolToken).totalSupply()
+    //     );
+
+    //     params.liquidityDelta = -(liquidityToRemove.toInt256());
+    //     (delta,) = poolManager.modifyLiquidity(key, params, ZERO_BYTES);
+    //     pool.hasAccruedFees = false;
+    // }
+
+    function _rebalance(PoolKey memory key) 
+        internal 
+    {
         PoolId poolId = key.toId();
-        (BalanceDelta balanceDelta,) = poolManager.modifyLiquidity(
+        (BalanceDelta balanceDelta,) = poolManagerVault.modifyLiquidity(
             key,
             IPoolManager.ModifyLiquidityParams({
                 tickLower: MIN_TICK,
                 tickUpper: MAX_TICK,
-                liquidityDelta: -(poolManager.getLiquidity(poolId).toInt256()),
+                liquidityDelta: -(poolManagerVault.getLiquidity(poolId).toInt256()),
                 salt: 0
             }),
             ZERO_BYTES
@@ -347,9 +347,9 @@ contract Vault is BaseHook {
             ) * FixedPointMathLib.sqrt(FixedPoint96.Q96)
         ).toUint160();
 
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
+        (uint160 sqrtPriceX96,,,) = poolManagerVault.getSlot0(poolId);
 
-        poolManager.swap(
+        poolManagerVault.swap(
             key,
             IPoolManager.SwapParams({
                 zeroForOne: newSqrtPriceX96 < sqrtPriceX96,
@@ -367,7 +367,7 @@ contract Vault is BaseHook {
             uint256(uint128(balanceDelta.amount1()))
         );
 
-        (BalanceDelta balanceDeltaAfter,) = poolManager.modifyLiquidity(
+        (BalanceDelta balanceDeltaAfter,) = poolManagerVault.modifyLiquidity(
             key,
             IPoolManager.ModifyLiquidityParams({
                 tickLower: MIN_TICK,
@@ -381,6 +381,6 @@ contract Vault is BaseHook {
         uint128 donateAmount0 = uint128(balanceDelta.amount0() + balanceDeltaAfter.amount0());
         uint128 donateAmount1 = uint128(balanceDelta.amount1() + balanceDeltaAfter.amount1());
 
-        poolManager.donate(key, donateAmount0, donateAmount1, ZERO_BYTES);
+        poolManagerVault.donate(key, donateAmount0, donateAmount1, ZERO_BYTES);
     }
 }
