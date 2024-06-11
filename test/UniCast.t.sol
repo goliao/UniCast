@@ -134,10 +134,6 @@ contract TestUniCast is Test, Deployers {
         assertEq(accruedFees, true);
     }
 
-    function testBeforeSwapUpdateFee() public {
-
-    }
-
     function testBeforeSwapNotVolatile() public {
         PoolId poolId = key.toId();
         vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getVolatility.selector), abi.encode(uint24(100)));
