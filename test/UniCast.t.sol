@@ -222,5 +222,31 @@ contract TestUniCast is Test, Deployers {
         vm.stopPrank();
     }
 
+    function testRebalanceAfterSwap() public {
+        PoolId poolId = key.toId();
+        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getVolatility.selector), abi.encode(uint24(100)));
+        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId), abi.encode(LiquidityData(-100, 100, 1000)));
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -1 ether,
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+
+        // Check if rebalancing occurred
+        (bool accruedFees,) = hook.poolInfos(poolId);
+        assertTrue(accruedFees, "Rebalancing should have occurred and set hasAccruedFees to true");
+
+        vm.stopPrank();
+    }
+
+    function testRebalanceAfterSwapNegative() public {
+        PoolId poolId = key.toId();
+        // Check if rebalancing did not occur with no swaps
+        (bool accruedFees,) = hook.poolInfos(poolId);
+        assertFalse(accruedFees, "Rebalancing should not have occurred and hasAccruedFees should be false");
+
+        vm.stopPrank();
+    }
     
 }
