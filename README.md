@@ -30,10 +30,10 @@ Forward-looking price changes to rebalance LP positions
 
 
 **Implementation**
-[Implementation](assets/diagram.png)
+![Implementation](assets/diagram.png)
 
 **UI**
-[UI](assets/UI.jpg)
+![UI](assets/UI.jpg)
 
 
 
