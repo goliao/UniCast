@@ -26,7 +26,8 @@ Forward-looking price changes to rebalance LP positions
 3) Yield-bearing assets rebalancing, e.g. StETH/ETH pool, USDY/USDC pool
 
 **Details**
-[See Slides on UniCast for more details](assets/Slides.pdf)
+[![See Slides](assets/slide_preview.jpg)](https://docs.google.com/presentation/d/1fNhfOWnzQpHvRUWAvRYE1kagD5t1hFjfn-abNbr1vew/edit?usp=sharing) ([Slides in pdf](assets/Slides.pdf))
+
 
 
 **Implementation**
