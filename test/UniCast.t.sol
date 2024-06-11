@@ -41,6 +41,7 @@ contract TestUniCast is Test, Deployers {
     MockERC20 token1;
 
     error MustUseDynamicFee();
+    event RebalanceOccurred(PoolId poolId);
 
     PoolSwapTest.TestSettings testSettings = PoolSwapTest
         .TestSettings({
@@ -220,6 +221,8 @@ contract TestUniCast is Test, Deployers {
 
     function testRebalanceAfterSwap() public {
         PoolId poolId = key.toId();
+        vm.expectEmit(targetAddr);
+        emit RebalanceOccurred(poolId);
         vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getVolatility.selector), abi.encode(uint24(100)));
         vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId), abi.encode(LiquidityData(-100, 100, 1000)));
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -232,7 +235,7 @@ contract TestUniCast is Test, Deployers {
         // Check if rebalancing occurred
         (bool accruedFees,) = hook.poolInfos(poolId);
         assertTrue(accruedFees, "Rebalancing should have occurred and set hasAccruedFees to true");
-
+        assertEq(vm.getRecordedLogs().length, 0, "No events should be emitted");
         vm.stopPrank();
     }
 

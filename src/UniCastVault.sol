@@ -32,6 +32,7 @@ abstract contract UniCastVault {
     
     event LiquidityAdded(uint256 amount0, uint256 amount1);
     event LiquidityRemoved(uint256 amount0, uint256 amount1);
+    event RebalanceOccurred(PoolId poolId);
 
     error PoolNotInitialized();
     error InsufficientInitialLiquidity();
@@ -200,7 +201,10 @@ abstract contract UniCastVault {
         (, int24 currentTick,, ) = poolManagerVault.getSlot0(poolId);
 
         LiquidityData memory liquidityData = liquidityOracle.getLiquidityData(poolId);
-        return true;
+        if (liquidityData.liquidityDelta > 0) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -436,5 +440,7 @@ abstract contract UniCastVault {
         uint128 donateAmount1 = uint128(balanceDelta.amount1() + balanceDeltaAfter.amount1());
 
         poolManagerVault.donate(key, donateAmount0, donateAmount1, ZERO_BYTES);
+
+        emit RebalanceOccurred(poolId);
     }
 }
