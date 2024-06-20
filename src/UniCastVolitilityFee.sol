@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
 import {IUniCastOracle} from "./interface/IUniCastOracle.sol";
+import {PoolId} from "v4-core/types/PoolId.sol";
 
 abstract contract UniCastVolitilityFee {
     using LPFeeLibrary for uint24;
@@ -40,8 +41,7 @@ abstract contract UniCastVolitilityFee {
      * @dev Calculates and returns the fee based on the current volatility.
      * @return The calculated fee as a uint24.
      */
-    function getFee() public view returns (uint24) {
-        uint24 volatility = volitilityOracle.getVolatility();
-        return BASE_FEE * volatility / 100;
+    function getFee(PoolId _poolId) public view returns (uint24) {
+        return volitilityOracle.getFee(_poolId);
     }
 }

@@ -30,12 +30,13 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
      * @param _oracle The address of the oracle.
      */
     constructor(
-        IPoolManager _poolManager, 
+        IPoolManager _poolManager,
         IUniCastOracle _oracle
-    ) 
-        UniCastVault(_poolManager, _oracle) 
-        UniCastVolitilityFee(_poolManager, _oracle) 
-        BaseHook(_poolManager) {}
+    )
+        UniCastVault(_poolManager, _oracle)
+        UniCastVolitilityFee(_poolManager, _oracle)
+        BaseHook(_poolManager)
+    {}
 
     /**
      * @dev Returns the permissions for the hook.
@@ -68,22 +69,15 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
 
     /**
      * @dev Hook that is called before pool initialization.
-     * @param sender The address of the sender.
      * @param key The pool key.
-     * @param sqrtPriceX96 The square root price.
-     * @param data Additional data.
      * @return A bytes4 selector.
      */
     function beforeInitialize(
-        address sender,
+        address,
         PoolKey calldata key,
-        uint160 sqrtPriceX96,
-        bytes calldata data
-    )  
-        external 
-        override
-        returns (bytes4) 
-    {
+        uint160,
+        bytes calldata
+    ) external override returns (bytes4) {
         if (!key.fee.isDynamicFee()) revert MustUseDynamicFee();
         PoolId poolId = key.toId();
         string memory tokenSymbol = string(
@@ -108,21 +102,14 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
     /**
      * @dev Hook that is called before adding liquidity.
      * @param sender The address of the sender.
-     * @param key The pool key.
-     * @param params The liquidity parameters.
-     * @param data Additional data.
      * @return A bytes4 selector.
      */
     function beforeAddLiquidity(
         address sender,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
-        bytes calldata data
-    ) 
-        external  
-        override
-        returns (bytes4) 
-    {
+        PoolKey calldata,
+        IPoolManager.ModifyLiquidityParams calldata,
+        bytes calldata
+    ) external view override returns (bytes4) {
         if (sender != address(this)) revert SenderMustBeHook();
 
         return IHooks.beforeAddLiquidity.selector;
@@ -145,8 +132,8 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         PoolId poolId = key.toId();
-        uint24 fee = getFee();
-        (,,,uint24 currentFee) = poolManagerFee.getSlot0(poolId);
+        uint24 fee = getFee(poolId);
+        (, , , uint24 currentFee) = poolManagerFee.getSlot0(poolId);
         if (currentFee != fee) poolManagerFee.updateDynamicLPFee(key, fee);
 
         if (!poolInfos[poolId].hasAccruedFees) {
@@ -168,13 +155,7 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
         IPoolManager.SwapParams calldata,
         BalanceDelta,
         bytes calldata
-    ) 
-        external 
-        virtual 
-        override
-        poolManagerOnly 
-        returns (bytes4, int128) 
-    {
+    ) external virtual override poolManagerOnly returns (bytes4, int128) {
         autoRebalance(poolKey);
 
         return (IHooks.afterSwap.selector, 0);
@@ -185,11 +166,9 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
      * @param rawData The raw data.
      * @return The result of the callback.
      */
-    function unlockCallback(bytes calldata rawData)
-        external
-        override
-        returns (bytes memory)
-    {
+    function unlockCallback(
+        bytes calldata rawData
+    ) external override returns (bytes memory) {
         return _unlockVaultCallback(rawData);
     }
 }

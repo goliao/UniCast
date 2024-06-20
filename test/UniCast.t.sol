@@ -100,10 +100,11 @@ contract TestUniCast is Test, Deployers {
         assertEq(oracleAddr, address(hook.getVolatilityOracle()));
     }
     function testGetFeeWithVolatility() public {
-        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getVolatility.selector), abi.encode(uint24(150)));
-        uint128 fee = hook.getFee();
+        PoolId poolId = key.toId();
+        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getFee.selector, poolId), abi.encode(uint24(650)));
+        uint128 fee = hook.getFee(poolId);
         console.logUint(fee);
-        assertEq(fee, 500 * 1.5);
+        assertEq(fee, 650);
     }
 
     function testBeforeInitializeRevertsIfNotDynamic() public {
@@ -120,7 +121,7 @@ contract TestUniCast is Test, Deployers {
 
     function testBeforeSwapVolatile() public {
         PoolId poolId = key.toId();
-        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getVolatility.selector), abi.encode(uint24(150)));
+        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getFee.selector), abi.encode(uint24(650)));
         vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId), abi.encode(LiquidityData(-100, 100, 1000)));
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
@@ -130,14 +131,14 @@ contract TestUniCast is Test, Deployers {
         // 1. Conduct a swap at baseline vol
         // This should just use `BASE_FEE` 
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-        assertEq(_fetchPoolLPFee(key), 500 * 1.5);
+        assertEq(_fetchPoolLPFee(key), 650);
         (bool accruedFees,) = hook.poolInfos(poolId);
         assertEq(accruedFees, true);
     }
 
     function testBeforeSwapNotVolatile() public {
         PoolId poolId = key.toId();
-        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getVolatility.selector), abi.encode(uint24(100)));
+        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getFee.selector), abi.encode(uint24(500)));
         vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId), abi.encode(LiquidityData(-100, 100, 1000)));
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
@@ -223,7 +224,7 @@ contract TestUniCast is Test, Deployers {
         PoolId poolId = key.toId();
         vm.expectEmit(targetAddr);
         emit RebalanceOccurred(poolId);
-        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getVolatility.selector), abi.encode(uint24(100)));
+        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getFee.selector), abi.encode(uint24(500)));
         vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId), abi.encode(LiquidityData(-100, 100, 1000)));
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,

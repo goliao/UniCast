@@ -6,14 +6,16 @@ import {PoolId} from "v4-core/types/PoolId.sol";
 import {IUniCastOracle, LiquidityData} from "./interface/IUniCastOracle.sol";
 
 contract UniCastOracle is Ownable, IUniCastOracle {
-    uint24 public impliedVol;
+    uint24 immutable public baseFee; // 500 == 0.05% 
     address public keeper;
     
     event KeeperUpdated(address indexed newKeeper);
-    event VolEvent(uint256 value);
+    event FeeChanged(PoolId poolId, uint256 fee);
+    event LiquidityChanged(PoolId poolId, LiquidityData);
 
     error Unauthorized();
 
+    mapping (PoolId => int24) public feeAdditional; // could be less than base fee 
     mapping (PoolId => LiquidityData) public liquidityData;
 
     modifier onlyKeeper() {
@@ -25,9 +27,9 @@ contract UniCastOracle is Ownable, IUniCastOracle {
      * @dev Constructor to initialize the UniCastOracle contract.
      * @param _keeper The address of the initial keeper.
      */
-    constructor(address _keeper) Ownable(_keeper) {
+    constructor(address _keeper, uint24 _baseFee) Ownable(_keeper) {
         keeper = _keeper;
-        impliedVol = 100;
+        baseFee = _baseFee;
     }
 
     /**
@@ -43,6 +45,7 @@ contract UniCastOracle is Ownable, IUniCastOracle {
             tickUpper: _tickUpper,
             liquidityDelta: _liquidityDelta
         });
+        emit LiquidityChanged(_poolId, liquidityData[_poolId]);
     }
 
     /**
@@ -55,12 +58,13 @@ contract UniCastOracle is Ownable, IUniCastOracle {
     }
 
     /**
+     * This fee can be set as part of a dutch auction. 
      * @dev Sets the implied volatility.
-     * @param _impliedVol The new implied volatility.
+     * @param _fee The new implied volatility.
      */
-    function setImpliedVol(uint24 _impliedVol) external onlyKeeper {
-        impliedVol = _impliedVol;
-        emit VolEvent(impliedVol);
+    function setFee(PoolId _poolId, uint24 _fee) external onlyKeeper {
+        feeAdditional[_poolId] = int24(_fee) - int24(baseFee);
+        emit FeeChanged(_poolId, _fee);
     }
 
     /**
@@ -76,7 +80,7 @@ contract UniCastOracle is Ownable, IUniCastOracle {
      * @dev Gets the current implied volatility.
      * @return The current implied volatility.
      */
-    function getVolatility() external view override returns (uint24) {
-        return impliedVol;
+    function getFee(PoolId poolId) external view override returns (uint24) {
+        return uint24(feeAdditional[poolId] + int24(baseFee));
     }
 }

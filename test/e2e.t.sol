@@ -54,7 +54,7 @@ contract TestUniCast is Test, Deployers {
         // Deploy v4-core
         deployFreshManagerAndRouters();
 
-        oracle = new UniCastOracle(keeper);
+        oracle = new UniCastOracle(keeper, 500);
 
         deployCodeTo(
             "UniCastHook.sol", 
@@ -98,15 +98,17 @@ contract TestUniCast is Test, Deployers {
         assertEq(address(oracle), address(hook.getVolatilityOracle()));
     }
     function testGetFeeWithNoVolatility() public view {
-        uint128 fee = hook.getFee();
+        uint128 fee = hook.getFee(key.toId());
         assertEq(fee, 500);
     }
 
     function testSetImpliedVolatility() public {
+        PoolId poolId = key.toId();
+
         vm.startPrank(keeper);
-        oracle.setImpliedVol(150);
-        uint128 fee = hook.getFee();
-        assertEq(fee, 500 * 1.5);
+        oracle.setFee(poolId, 650);
+        uint128 fee = hook.getFee(poolId);
+        assertEq(fee, 650);
     }
 
     function testBeforeSwapNotVolatile() public {
