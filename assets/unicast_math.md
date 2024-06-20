@@ -82,8 +82,8 @@ $$v(L,P_c,P_l,P_u)=amount0+amount1*P_c$$
 
 Rebalance action by itself should not change the price of the portfolio. Otherwise, LP can just create value out of rebalancing.
 
-Suppose $P_l$ and $P_u$ both increase by 10\% and L and $P_c$ remain constant, amount0 and amount1 will both change by the corresponding amounts according to the formula above. The vault would need to settle the balance by depositing/withdrawing the change in amount0 and amoount1. This requires a swap. And the portfolio value would change since $P_c$ is the same unless $\Delta amount0=-\Delta amount1*P_c$, a counterfactural.
-
+<!-- Suppose $P_l$ and $P_u$ both increase by 10\% and L and $P_c$ remain constant, amount0 and amount1 will both change by the corresponding amounts according to the formula above. The vault would need to settle the balance by depositing/withdrawing the change in amount0 and amoount1. This requires a swap. And the portfolio value would change since $P_c$ is the same unless $\Delta amount0=-\Delta amount1*P_c$, a counterfactural. -->
+<!-- 
 Same value of portfolio before and after reblancing requires:
 
 $$amount0=-amount1*P_c,$$
@@ -96,14 +96,14 @@ which simplifies to
 
 $$\sqrt{P_u} = \frac{\sqrt{P_l} P_c \sqrt{P_c} + \sqrt{P_l}}{1 - P_c^2}.$$
 
-This means that if we shift $P_l$ by say a certain growth rate, $P_u$ would most likely not shift by as much without modifying the current price changing. 
+This means that if we shift $P_l$ by say a certain growth rate, $P_u$ would most likely not shift by as much without modifying the current price changing.  -->
 
-One can change the Liquidity such that 
+Assuming $P_c$ is unchanged, one can change the Liquidity such that 
 
 $$v(L',P_c,P_l',P_u')=v(L,P_c,P_l,P_u),$$
 where $'$ denote new values.
 
-I.e., we calculate $L'-L$ for `modifiedliquidity.liquidityDelta` based on the new $P_l'$ and $P_u'$ values. But that seems like we'll still have different amount0 and amount1 which requires swaps. Also when we swap, we'll have a different $P_c$ as a result of the swap. We can approximate this, but in reality the amount of $\Delta P_c$ depends on the total liquidity of the pool, i.e. amount of LPs outside of the vault.
+I.e., we calculate $L'-L$ for `modifiedliquidity.liquidityDelta` based on the new $P_l'$ and $P_u'$ values. We'll still have different amount0 and amount1 which requires swaps. Also when we swap, we'll have a different $P_c$ as a result of the swap. We can approximate this, but in reality the amount of $\Delta P_c$ depends on the total liquidity of the pool, i.e. amount of LPs outside of the vault.
 
 
 **Suppose the impact of the swap is infintisimal, that is $P_c'=P_c$,** then we need to solve the following $v'(.')=v(.)$ equation for $L'$ given $P_u$, $P_l$,$P_u'$, $P_l'$, $L$, and $P_c$. That is,
