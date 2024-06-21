@@ -31,9 +31,11 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
      */
     constructor(
         IPoolManager _poolManager,
-        IUniCastOracle _oracle
+        IUniCastOracle _oracle,
+        int24 initialMinTick,
+        int24 initialMaxTick
     )
-        UniCastVault(_poolManager, _oracle)
+        UniCastVault(_poolManager, _oracle, initialMinTick, initialMaxTick)
         UniCastVolitilityFee(_poolManager, _oracle)
         BaseHook(_poolManager)
     {}

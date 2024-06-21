@@ -40,6 +40,7 @@ contract TestUniCast is Test, Deployers {
     IUniCastOracle oracle;
     MockERC20 token0;
     MockERC20 token1;
+    int24 constant INITIAL_MAX_TICK = 120;
 
     error MustUseDynamicFee();
 
@@ -58,7 +59,7 @@ contract TestUniCast is Test, Deployers {
 
         deployCodeTo(
             "UniCastHook.sol", 
-            abi.encode(manager, address(oracle)),
+            abi.encode(manager, address(oracle), -INITIAL_MAX_TICK, INITIAL_MAX_TICK),
             targetAddr
         );
 
@@ -91,6 +92,13 @@ contract TestUniCast is Test, Deployers {
         token1.approve(address(hook), type(uint256).max);
 
         hook.addLiquidity(key, 10 ether, 10 ether);
+        vm.stopPrank();
+
+        //init oracle
+        vm.startPrank(keeper);
+        PoolId poolId = key.toId();
+
+        oracle.setLiquidityData(poolId, -INITIAL_MAX_TICK, INITIAL_MAX_TICK);
         vm.stopPrank();
     }
 
@@ -128,6 +136,9 @@ contract TestUniCast is Test, Deployers {
 
     function testRebalanceAfterSwap() public {
         PoolId poolId = key.toId();
+        vm.startPrank(keeper);
+        oracle.setLiquidityData(poolId, -60, 60);
+        vm.stopPrank();
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: -1 ether,

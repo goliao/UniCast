@@ -5,15 +5,13 @@
 1. Forecasted volatility
     - data input:
         - poolId
-        - updateTime
-        - impVol
+        - new fee from implied volatility
     - Compute (offchain):
         - convert updateTime to blockNumber
         - compute fee from impVol 
     - stored as:
         - a mapping from
             - poolId
-            - blockNumber
         - to
             - fee
  2. Forecasted path
@@ -27,10 +25,10 @@
     - stored as:
         - a mapping from
             - poolId
-            - blockNumber
         - to
             - lowerTick
             - upperTick (if changing position range)
+            - liquidityDelta 
 
 
 

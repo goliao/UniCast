@@ -6,12 +6,10 @@ import {PoolId} from "v4-core/types/PoolId.sol";
  * @dev Struct to hold liquidity data.
  * @param tickLower The lower tick boundary.
  * @param tickUpper The upper tick boundary.
- * @param liquidityDelta The change in liquidity.
  */
 struct LiquidityData {
     int24 tickLower;
     int24 tickUpper;
-    int256 liquidityDelta;   
 }
 
 /**
@@ -37,9 +35,8 @@ interface IUniCastOracle {
      * @param _poolId The ID of the pool.
      * @param _tickLower The lower tick boundary.
      * @param _tickUpper The upper tick boundary.
-     * @param _liquidityDelta The change in liquidity.
      */
-    function setLiquidityData(PoolId _poolId, int24 _tickLower, int24 _tickUpper, int256 _liquidityDelta) external;
+    function setLiquidityData(PoolId _poolId, int24 _tickLower, int24 _tickUpper) external;
 
     /**
      * @dev Sets the fee for a pool.

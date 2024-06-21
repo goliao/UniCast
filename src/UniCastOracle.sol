@@ -37,13 +37,11 @@ contract UniCastOracle is Ownable, IUniCastOracle {
      * @param _poolId The ID of the pool.
      * @param _tickLower The lower tick boundary.
      * @param _tickUpper The upper tick boundary.
-     * @param _liquidityDelta The change in liquidity.
      */
-    function setLiquidityData(PoolId _poolId, int24 _tickLower, int24 _tickUpper, int256 _liquidityDelta) external onlyKeeper {
+    function setLiquidityData(PoolId _poolId, int24 _tickLower, int24 _tickUpper) external onlyKeeper {
         liquidityData[_poolId] = LiquidityData({
             tickLower: _tickLower,
-            tickUpper: _tickUpper,
-            liquidityDelta: _liquidityDelta
+            tickUpper: _tickUpper
         });
         emit LiquidityChanged(_poolId, liquidityData[_poolId]);
     }
