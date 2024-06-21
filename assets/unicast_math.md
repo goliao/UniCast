@@ -80,21 +80,21 @@ $$v(L,P_c,P_l,P_u)=amount0+amount1*P_c$$
 
 Rebalance action by itself should not change the price of the portfolio. Otherwise, LP can just create value out of rebalancing.
 
-<!-- Suppose $P_l$ and $P_u$ both increase by 10\% and L and $P_c$ remain constant, amount0 and amount1 will both change by the corresponding amounts according to the formula above. The vault would need to settle the balance by depositing/withdrawing the change in amount0 and amoount1. This requires a swap. And the portfolio value would change since $P_c$ is the same unless $\Delta amount0=-\Delta amount1*P_c$, a counterfactural. -->
-<!-- 
+Suppose $P_l$ and $P_u$ both increase by 10\% and L and $P_c$ remain constant, amount0 and amount1 will both change by the corresponding amounts according to the formula above. The vault would need to settle the balance by depositing/withdrawing the change in amount0 and amoount1. This requires a swap. And the portfolio value would change since $P_c$ is the same unless $\Delta amount0=-\Delta amount1*P_c$, a counterfactural. 
+
 Same value of portfolio before and after reblancing requires:
 
-$$amount0=-amount1*P_c,$$
+$$\Delta amount0=- \Delta amount1*P_c,$$
 
 That is,
 
-$$\frac{L \times (\sqrt{P_u} - \sqrt{P_l})}{\sqrt{P_c} \times \sqrt{P_u}}=-(L \times (\sqrt{P_c} - \sqrt{P_l}))*P_c,$$
+$$\frac{\Delta L \times (\sqrt{P_u} - \sqrt{P_l})}{\sqrt{P_c} \times \sqrt{P_u}}=-(\Delta L \times (\sqrt{P_c} - \sqrt{P_l}))*P_c,$$
 
 which simplifies to
 
 $$\sqrt{P_u} = \frac{\sqrt{P_l} P_c \sqrt{P_c} + \sqrt{P_l}}{1 - P_c^2}.$$
 
-This means that if we shift $P_l$ by say a certain growth rate, $P_u$ would most likely not shift by as much without modifying the current price changing.  -->
+This means that if we shift $P_l$ by say a certain growth rate, $P_u$ would most likely not shift by as much without modifying the current price changing.  
 
 Assuming $P_c$ is unchanged, one can change the Liquidity such that 
 
