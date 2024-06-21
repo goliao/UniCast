@@ -650,19 +650,20 @@ abstract contract UniCastVault {
         uint256 sqrtPlNew,
         uint256 sqrtPuNew
     ) internal pure returns (uint256) {
-        // Calculate square roots using fixed-point arithmetic
-        uint256 Pc = (sqrtPc ** 2) >> FixedPoint96.RESOLUTION;
+        // Calculate normal current price, but keep in X96 format 
+        // in order to do operations with the others 
+        uint256 PcX96 = (sqrtPc ** 2) >> FixedPoint96.RESOLUTION;
 
         // Calculate numerator terms
         uint256 numerator = (sqrtPu - sqrtPl) /
             (sqrtPc * sqrtPu) +
-            Pc *
+            PcX96 *
             (sqrtPc - sqrtPl);
 
         // Calculate denominator terms
         uint256 denominator = (sqrtPuNew - sqrtPlNew) /
             (sqrtPc * sqrtPuNew) +
-            Pc *
+            PcX96 *
             (sqrtPc - sqrtPlNew);
 
         // Calculate new L
