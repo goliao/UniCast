@@ -8,7 +8,13 @@ import {UniCastHook} from "../../src/UniCastHook.sol";
 import {IUniCastOracle} from "../../src/interface/IUniCastOracle.sol";
 
 contract UniCastImplementation is UniCastHook {
-    constructor(IPoolManager _poolManager, IUniCastOracle _oracle, UniCastHook addressToEtch) UniCastHook(_poolManager, _oracle) {
+    constructor(
+        IPoolManager _poolManager,
+        IUniCastOracle _oracle,
+        UniCastHook addressToEtch,
+        int24 initialMinTick,
+        int24 initialMaxTick
+    ) UniCastHook(_poolManager, _oracle, initialMinTick, initialMaxTick) {
         Hooks.validateHookPermissions(addressToEtch, getHookPermissions());
     }
 
