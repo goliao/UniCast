@@ -33,8 +33,6 @@ abstract contract UniCastVault {
     using FixedPointMathLib for uint256;
     using FullMath for uint256;
 
-    event Hi();
-    event Hi(int256, int256);
     event LiquidityAdded(uint256 amount0, uint256 amount1);
     event LiquidityRemoved(uint256 amount0, uint256 amount1);
     event RebalanceOccurred(PoolId poolId);
@@ -102,8 +100,6 @@ abstract contract UniCastVault {
         if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
         uint128 poolLiquidity = poolManagerVault.getLiquidity(poolId);
-
-        emit Hi(0, 0);
 
         // Only supporting one range of liquidity for now
         liquidity = LiquidityAmounts.getLiquidityForAmounts(
@@ -300,7 +296,6 @@ abstract contract UniCastVault {
             delta = _modifyLiquidity(data);
             poolInfo.hasAccruedFees = false;
         } else {
-            emit Hi();
             (delta, ) = poolManagerVault.modifyLiquidity(
                 data.key,
                 data.params,
