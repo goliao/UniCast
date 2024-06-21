@@ -33,8 +33,6 @@ abstract contract UniCastVault {
     using FixedPointMathLib for uint256;
     using FullMath for uint256;
 
-    event Hi();
-    event Hi(int256, int256);
     event LiquidityAdded(uint256 amount0, uint256 amount1);
     event LiquidityRemoved(uint256 amount0, uint256 amount1);
     event RebalanceOccurred(PoolId poolId);
@@ -102,8 +100,6 @@ abstract contract UniCastVault {
         if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
         uint128 poolLiquidity = poolManagerVault.getLiquidity(poolId);
-
-        emit Hi(0, 0);
 
         // Only supporting one range of liquidity for now
         liquidity = LiquidityAmounts.getLiquidityForAmounts(
@@ -300,7 +296,6 @@ abstract contract UniCastVault {
             delta = _modifyLiquidity(data);
             poolInfo.hasAccruedFees = false;
         } else {
-            emit Hi();
             (delta, ) = poolManagerVault.modifyLiquidity(
                 data.key,
                 data.params,
@@ -655,19 +650,20 @@ abstract contract UniCastVault {
         uint256 sqrtPlNew,
         uint256 sqrtPuNew
     ) internal pure returns (uint256) {
-        // Calculate square roots using fixed-point arithmetic
-        uint256 Pc = (sqrtPc ** 2) >> FixedPoint96.RESOLUTION;
+        // Calculate normal current price, but keep in X96 format 
+        // in order to do operations with the others 
+        uint256 PcX96 = (sqrtPc ** 2) >> FixedPoint96.RESOLUTION;
 
         // Calculate numerator terms
         uint256 numerator = (sqrtPu - sqrtPl) /
             (sqrtPc * sqrtPu) +
-            Pc *
+            PcX96 *
             (sqrtPc - sqrtPl);
 
         // Calculate denominator terms
         uint256 denominator = (sqrtPuNew - sqrtPlNew) /
             (sqrtPc * sqrtPuNew) +
-            Pc *
+            PcX96 *
             (sqrtPc - sqrtPlNew);
 
         // Calculate new L
