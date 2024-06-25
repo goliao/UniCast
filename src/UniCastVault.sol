@@ -20,6 +20,7 @@ import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {TransientStateLibrary} from "v4-core/libraries/TransientStateLibrary.sol";
 import {IUniCastOracle, LiquidityData} from "./interface/IUniCastOracle.sol";
+import "forge-std/console.sol";
 
 abstract contract UniCastVault {
     using LPFeeLibrary for uint24;
@@ -50,7 +51,7 @@ abstract contract UniCastVault {
     bytes internal constant ZERO_BYTES = "";
     bool poolRebalancing;
 
-    IPoolManager public immutable poolManagerVault;
+    IPoolManager public immutable manager;
     IUniCastOracle public liquidityOracle;
 
     struct CallbackData {
@@ -75,7 +76,7 @@ abstract contract UniCastVault {
         int24 initialMinTick,
         int24 initialMaxTick
     ) {
-        poolManagerVault = _poolManager;
+        manager = _poolManager;
         liquidityOracle = _oracle;
         minTick = initialMinTick;
         maxTick = initialMaxTick;
@@ -95,11 +96,11 @@ abstract contract UniCastVault {
     ) external returns (uint256 liquidity) {
         PoolId poolId = poolKey.toId();
 
-        (uint160 sqrtPriceX96, , , ) = poolManagerVault.getSlot0(poolId);
+        (uint160 sqrtPriceX96, , , ) = manager.getSlot0(poolId);
 
         if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
-        uint128 poolLiquidity = poolManagerVault.getLiquidity(poolId);
+        uint128 poolLiquidity = manager.getLiquidity(poolId);
 
         // Only supporting one range of liquidity for now
         liquidity = LiquidityAmounts.getLiquidityForAmounts(
@@ -159,7 +160,7 @@ abstract contract UniCastVault {
     ) external {
         PoolId poolId = poolKey.toId();
 
-        (uint160 sqrtPriceX96, , , ) = poolManagerVault.getSlot0(poolId);
+        (uint160 sqrtPriceX96, , , ) = manager.getSlot0(poolId);
 
         if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
@@ -253,7 +254,7 @@ abstract contract UniCastVault {
         bool settleUsingBurn
     ) internal returns (BalanceDelta delta) {
         delta = abi.decode(
-            poolManagerVault.unlock(
+            manager.unlock(
                 abi.encode(
                     CallbackData(
                         msg.sender,
@@ -284,7 +285,7 @@ abstract contract UniCastVault {
         bytes calldata rawData
     ) internal virtual returns (bytes memory) {
         require(
-            msg.sender == address(poolManagerVault),
+            msg.sender == address(manager),
             "Callback not called by manager"
         );
 
@@ -293,29 +294,31 @@ abstract contract UniCastVault {
         PoolInfo storage poolInfo = poolInfos[data.key.toId()];
 
         if (data.params.liquidityDelta < 0) {
+            // removing liquidity
             delta = _modifyLiquidity(data);
             poolInfo.hasAccruedFees = false;
         } else {
-            (delta, ) = poolManagerVault.modifyLiquidity(
+            // adding liquidity
+            (delta, ) = manager.modifyLiquidity(
                 data.key,
                 data.params,
                 ZERO_BYTES
             );
-            _settleDeltas(data.sender, data.key, delta);
+            _settleDeltas(data.sender, data.key, delta.amount0(), delta.amount1());
         }
 
         return abi.encode(delta);
     }
 
     /**
-     * @notice Modifies the liquidity based on the callback data.
+     * @notice Removes the liquidity based on the callback data.
      * @param modifierData The callback data for modifying liquidity.
      * @return delta The balance delta after modification.
      */
     function _modifyLiquidity(
         CallbackData memory modifierData
     ) internal returns (BalanceDelta delta) {
-        uint128 liquidityBefore = poolManagerVault
+        uint128 liquidityBefore = manager
             .getPosition(
                 modifierData.key.toId(),
                 address(this),
@@ -324,12 +327,12 @@ abstract contract UniCastVault {
                 modifierData.params.salt
             )
             .liquidity;
-        (delta, ) = poolManagerVault.modifyLiquidity(
+        (delta, ) = manager.modifyLiquidity(
             modifierData.key,
             modifierData.params,
             modifierData.hookData
         );
-        uint128 liquidityAfter = poolManagerVault
+        uint128 liquidityAfter = manager
             .getPosition(
                 modifierData.key.toId(),
                 address(this),
@@ -339,16 +342,8 @@ abstract contract UniCastVault {
             )
             .liquidity;
 
-        (, , int256 delta0) = _fetchBalances(
-            modifierData.key.currency0,
-            modifierData.sender,
-            address(this)
-        );
-        (, , int256 delta1) = _fetchBalances(
-            modifierData.key.currency1,
-            modifierData.sender,
-            address(this)
-        );
+        int256 delta0 = manager.currencyDelta(address(this), modifierData.key.currency0);
+        int256 delta1 = manager.currencyDelta(address(this), modifierData.key.currency1);
 
         require(
             int128(liquidityAfter) ==
@@ -393,59 +388,36 @@ abstract contract UniCastVault {
                 );
             }
         }
-
-    }
-
-    /**
-     * @notice Fetches the balances of a user and the pool.
-     * @param currency The currency to fetch balances for.
-     * @param user The address of the user.
-     * @param deltaHolder The address holding the delta.
-     * @return userBalance The balance of the user.
-     * @return poolBalance The balance of the pool.
-     * @return delta The balance delta.
-     */
-    function _fetchBalances(
-        Currency currency,
-        address user,
-        address deltaHolder
-    )
-        internal
-        view
-        returns (uint256 userBalance, uint256 poolBalance, int256 delta)
-    {
-        userBalance = currency.balanceOf(user);
-        poolBalance = currency.balanceOf(address(poolManagerVault));
-        delta = poolManagerVault.currencyDelta(deltaHolder, currency);
     }
 
     /**
      * @notice Settles the deltas for a given sender and pool key.
      * @param sender The address of the sender.
      * @param key The key of the pool.
-     * @param delta The balance delta to settle.
+     * @param delta0 The balance of currency 0 to settle
+     * @param delta1 the balance of currency 1 to settle
      */
     function _settleDeltas(
         address sender,
         PoolKey memory key,
-        BalanceDelta delta
+        int256 delta0, int256 delta1
     ) internal {
-        _settle(
-            key.currency0,
-            sender,
-            uint256(int256(-delta.amount0())),
-            false
-        );
-        _settle(
-            key.currency1,
-            sender,
-            uint256(int256(-delta.amount1())),
-            false
-        );
+        if (delta0 < 0) {
+            _settle(key.currency0, sender, uint256(-delta0), false);
+        }
+        if (delta1 < 0) {
+            _settle(key.currency1, sender, uint256(-delta1), false);
+        }
+        if (delta0 > 0) {
+            _take(key.currency0, sender, uint256(delta0), true);
+        }
+        if (delta1 > 0) {
+            _take(key.currency1, sender, uint256(delta1), true);
+        }
     }
 
     /**
-     * @notice Settles a given amount of currency, paying the pool. 
+     * @notice Settles a given amount of currency, paying the pool.
      * @param currency The currency to settle.
      * @param payer The address of the payer.
      * @param amount The amount to settle.
@@ -458,24 +430,24 @@ abstract contract UniCastVault {
         bool burn
     ) internal {
         if (burn) {
-            poolManagerVault.burn(payer, currency.toId(), amount);
+            manager.burn(payer, currency.toId(), amount);
         } else if (currency.isNative()) {
-            poolManagerVault.settle{value: amount}(currency);
+            manager.settle{value: amount}(currency);
         } else {
-            poolManagerVault.sync(currency);
+            manager.sync(currency);
             if (payer != address(this)) {
                 IERC20(Currency.unwrap(currency)).transferFrom(
                     payer,
-                    address(poolManagerVault),
+                    address(manager),
                     amount
                 );
             } else {
                 IERC20(Currency.unwrap(currency)).transfer(
-                    address(poolManagerVault),
+                    address(manager),
                     amount
                 );
             }
-            poolManagerVault.settle(currency);
+            manager.settle(currency);
         }
     }
 
@@ -493,9 +465,9 @@ abstract contract UniCastVault {
         bool claims
     ) internal {
         if (claims) {
-            poolManagerVault.mint(recipient, currency.toId(), amount);
+            manager.mint(recipient, currency.toId(), amount);
         } else {
-            poolManagerVault.take(currency, recipient, amount);
+            manager.take(currency, recipient, amount);
         }
     }
 
@@ -509,7 +481,7 @@ abstract contract UniCastVault {
     ) internal {
         PoolId poolId = key.toId();
 
-        Position.Info memory position = poolManagerVault.getPosition(
+        Position.Info memory position = manager.getPosition(
             poolId,
             address(this),
             minTick,
@@ -520,7 +492,7 @@ abstract contract UniCastVault {
         uint256 oldLiquidity = uint256(position.liquidity);
 
         // remove liquidity in position
-        (BalanceDelta balanceDelta, ) = poolManagerVault.modifyLiquidity(
+        (BalanceDelta balanceDelta, ) = manager.modifyLiquidity(
             key,
             IPoolManager.ModifyLiquidityParams({
                 tickLower: minTick,
@@ -531,8 +503,12 @@ abstract contract UniCastVault {
             ZERO_BYTES
         );
 
+        console.logString("after remove liquidity");
+        console.logInt(balanceDelta.amount0());
+        console.logInt(balanceDelta.amount1());
+
         // get current price
-        (uint160 sqrtPriceX96, , , ) = poolManagerVault.getSlot0(poolId);
+        (uint160 sqrtPriceX96, , , ) = manager.getSlot0(poolId);
 
         (
             uint256 newLiquidity,
@@ -549,47 +525,57 @@ abstract contract UniCastVault {
             // means amount0 must be sold if true
             bool zeroForOne = amount0Delta < 0;
 
-            // swap as much as possible until reaching the target price
-            poolManagerVault.swap(
+            manager.swap(
                 key,
                 IPoolManager.SwapParams({
                     zeroForOne: zeroForOne,
                     amountSpecified: zeroForOne ? amount0Delta : amount1Delta, // how much of the token to sell
-                    sqrtPriceLimitX96: sqrtPriceX96
+                    // allow for slippage
+                    sqrtPriceLimitX96: zeroForOne
+                        ? TickMath.MIN_SQRT_PRICE + 1
+                        : TickMath.MAX_SQRT_PRICE - 1
+                }),
+                abi.encode(false)
+            );
+
+            // set optimal liquidity
+            (BalanceDelta balanceDeltaAfter, ) = manager.modifyLiquidity(
+                key,
+                IPoolManager.ModifyLiquidityParams({
+                    tickLower: liquidityData.tickLower,
+                    tickUpper: liquidityData.tickUpper,
+                    liquidityDelta: -int256(newLiquidity), // adding to the pool
+                    salt: 0
                 }),
                 ZERO_BYTES
             );
 
-            // set optimal liquidity
-            (BalanceDelta balanceDeltaAfter, ) = poolManagerVault
-                .modifyLiquidity(
-                    key,
-                    IPoolManager.ModifyLiquidityParams({
-                        tickLower: liquidityData.tickLower,
-                        tickUpper: liquidityData.tickUpper,
-                        liquidityDelta: -int256(newLiquidity), // adding to the pool
-                        salt: 0
-                    }),
-                    ZERO_BYTES
-                );
-
             // donate the difference
-            uint128 donateAmount0 = uint128(
-                balanceDelta.amount0() + balanceDeltaAfter.amount0()
-            );
-            uint128 donateAmount1 = uint128(
-                balanceDelta.amount1() + balanceDeltaAfter.amount1()
-            );
+            // uint128 donateAmount0 = uint128(
+            //     balanceDelta.amount0() + balanceDeltaAfter.amount0()
+            // );
+            // uint128 donateAmount1 = uint128(
+            //     balanceDelta.amount1() + balanceDeltaAfter.amount1()
+            // );
 
-            if (poolManagerVault.getLiquidity(poolId) > 0) {
-                poolManagerVault.donate(
-                    key,
-                    donateAmount0,
-                    donateAmount1,
-                    ZERO_BYTES
-                );
-            }
+            // if (manager.getLiquidity(poolId) > 0) {
+            //     manager.donate(
+            //         key,
+            //         donateAmount0,
+            //         donateAmount1,
+            //         ZERO_BYTES
+            //     );
+            // }
         }
+
+        int256 delta0 = manager.currencyDelta(address(this), key.currency0);
+        int256 delta1 = manager.currencyDelta(address(this), key.currency1);
+        console.logString("hi");
+        console.logInt(delta0);
+        console.logInt(delta1);
+
+        console.logUint(key.currency0.balanceOf(address(this)));
+        _settleDeltas(address(this), key, delta0, delta1);
 
         minTick = liquidityData.tickLower;
         maxTick = liquidityData.tickUpper;
@@ -603,7 +589,8 @@ abstract contract UniCastVault {
         LiquidityData memory liquidityData,
         BalanceDelta balanceDelta
     )
-        internal view
+        internal
+        view
         returns (uint256 newLiquidity, int256 amount0Delta, int256 amount1Delta)
     {
         uint256 sqrtPl = TickMath.getSqrtPriceAtTick(minTick);
@@ -650,8 +637,8 @@ abstract contract UniCastVault {
         uint256 sqrtPlNew,
         uint256 sqrtPuNew
     ) internal pure returns (uint256) {
-        // Calculate normal current price, but keep in X96 format 
-        // in order to do operations with the others 
+        // Calculate normal current price, but keep in X96 format
+        // in order to do operations with the others
         uint256 PcX96 = (sqrtPc ** 2) >> FixedPoint96.RESOLUTION;
 
         // Calculate numerator terms

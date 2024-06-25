@@ -27,14 +27,17 @@ import {StateLibrary} from "../src/util/StateLibrary.sol";
 contract TestUniCast is Test, Deployers {
     using CurrencyLibrary for Currency;
     using PoolIdLibrary for PoolKey;
-    using StateLibrary for IPoolManager; 
+    using StateLibrary for IPoolManager;
 
-    address targetAddr = address(uint160(
-            Hooks.BEFORE_INITIALIZE_FLAG |
-                Hooks.BEFORE_SWAP_FLAG |
-                Hooks.BEFORE_ADD_LIQUIDITY_FLAG |
-                Hooks.AFTER_SWAP_FLAG
-        ));
+    address targetAddr =
+        address(
+            uint160(
+                Hooks.BEFORE_INITIALIZE_FLAG |
+                    Hooks.BEFORE_SWAP_FLAG |
+                    Hooks.BEFORE_ADD_LIQUIDITY_FLAG |
+                    Hooks.AFTER_SWAP_FLAG
+            )
+        );
     address keeper = makeAddr("keeper");
     UniCastHook hook = UniCastHook(targetAddr);
     IUniCastOracle oracle;
@@ -44,11 +47,8 @@ contract TestUniCast is Test, Deployers {
 
     error MustUseDynamicFee();
 
-    PoolSwapTest.TestSettings testSettings = PoolSwapTest
-        .TestSettings({
-            takeClaims: false,
-            settleUsingBurn: false
-        });
+    PoolSwapTest.TestSettings testSettings =
+        PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
     function setUp() public {
         emit log_named_address("targetAddr", targetAddr);
@@ -58,8 +58,13 @@ contract TestUniCast is Test, Deployers {
         oracle = new UniCastOracle(keeper, 500);
 
         deployCodeTo(
-            "UniCastHook.sol", 
-            abi.encode(manager, address(oracle), -INITIAL_MAX_TICK, INITIAL_MAX_TICK),
+            "UniCastHook.sol",
+            abi.encode(
+                manager,
+                address(oracle),
+                -INITIAL_MAX_TICK,
+                INITIAL_MAX_TICK
+            ),
             targetAddr
         );
 
@@ -100,11 +105,16 @@ contract TestUniCast is Test, Deployers {
 
         oracle.setLiquidityData(poolId, -INITIAL_MAX_TICK, INITIAL_MAX_TICK);
         vm.stopPrank();
+
+        // mint to vault, which becomes an LP basically
+        token0.mint(address(hook), 1000 ether);
+        token1.mint(address(hook), 1000 ether);
     }
 
     function testVolatilityOracleAddress() public view {
         assertEq(address(oracle), address(hook.getVolatilityOracle()));
     }
+
     function testGetFeeWithNoVolatility() public view {
         uint128 fee = hook.getFee(key.toId());
         assertEq(fee, 500);
@@ -127,10 +137,10 @@ contract TestUniCast is Test, Deployers {
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
         // 1. Conduct a swap at baseline vol
-        // This should just use `BASE_FEE` 
+        // This should just use `BASE_FEE`
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
         assertEq(_fetchPoolLPFee(key), 500);
-        (bool accruedFees,) = hook.poolInfos(poolId);
+        (bool accruedFees, ) = hook.poolInfos(poolId);
         assertEq(accruedFees, true);
     }
 
@@ -147,15 +157,19 @@ contract TestUniCast is Test, Deployers {
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
         // Check if rebalancing occurred
-        (bool accruedFees,) = hook.poolInfos(poolId);
-        assertTrue(accruedFees, "Rebalancing should have occurred and set hasAccruedFees to true");
+        (bool accruedFees, ) = hook.poolInfos(poolId);
+        assertTrue(
+            accruedFees,
+            "Rebalancing should have occurred and set hasAccruedFees to true"
+        );
 
         vm.stopPrank();
     }
 
-    function _fetchPoolLPFee(PoolKey memory _key) internal view returns (uint256 lpFee) {
+    function _fetchPoolLPFee(
+        PoolKey memory _key
+    ) internal view returns (uint256 lpFee) {
         PoolId id = _key.toId();
-        (,,, lpFee) = manager.getSlot0(id);
+        (, , , lpFee) = manager.getSlot0(id);
     }
-
 }

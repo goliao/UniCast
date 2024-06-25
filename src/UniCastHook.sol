@@ -156,9 +156,12 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
         PoolKey calldata poolKey,
         IPoolManager.SwapParams calldata,
         BalanceDelta,
-        bytes calldata
+        bytes calldata hookData
     ) external virtual override poolManagerOnly returns (bytes4, int128) {
-        autoRebalance(poolKey);
+        bool firstSwap = hookData.length == 0 || abi.decode(hookData, (bool));
+        if (firstSwap) {
+            autoRebalance(poolKey);
+        }
 
         return (IHooks.afterSwap.selector, 0);
     }

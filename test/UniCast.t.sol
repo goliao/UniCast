@@ -26,14 +26,17 @@ import {StateLibrary} from "../src/util/StateLibrary.sol";
 contract TestUniCast is Test, Deployers {
     using CurrencyLibrary for Currency;
     using PoolIdLibrary for PoolKey;
-    using StateLibrary for IPoolManager; 
+    using StateLibrary for IPoolManager;
 
-    address targetAddr = address(uint160(
-            Hooks.BEFORE_INITIALIZE_FLAG |
-                Hooks.BEFORE_SWAP_FLAG |
-                Hooks.BEFORE_ADD_LIQUIDITY_FLAG |
-                Hooks.AFTER_SWAP_FLAG
-        ));
+    address targetAddr =
+        address(
+            uint160(
+                Hooks.BEFORE_INITIALIZE_FLAG |
+                    Hooks.BEFORE_SWAP_FLAG |
+                    Hooks.BEFORE_ADD_LIQUIDITY_FLAG |
+                    Hooks.AFTER_SWAP_FLAG
+            )
+        );
     UniCastHook hook = UniCastHook(targetAddr);
     address oracleAddr = makeAddr("oracle");
     UniCastOracle oracle = UniCastOracle(oracleAddr);
@@ -46,11 +49,8 @@ contract TestUniCast is Test, Deployers {
     error MustUseDynamicFee();
     event RebalanceOccurred(PoolId poolId);
 
-    PoolSwapTest.TestSettings testSettings = PoolSwapTest
-        .TestSettings({
-            takeClaims: false,
-            settleUsingBurn: false
-        });
+    PoolSwapTest.TestSettings testSettings =
+        PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
     function setUp() public {
         emit log_named_address("targetAddr", targetAddr);
@@ -58,8 +58,13 @@ contract TestUniCast is Test, Deployers {
         deployFreshManagerAndRouters();
 
         deployCodeTo(
-            "UniCastHook.sol", 
-            abi.encode(manager, oracleAddr, -INITIAL_MAX_TICK, INITIAL_MAX_TICK),
+            "UniCastHook.sol",
+            abi.encode(
+                manager,
+                oracleAddr,
+                -INITIAL_MAX_TICK,
+                INITIAL_MAX_TICK
+            ),
             targetAddr
         );
 
@@ -93,6 +98,10 @@ contract TestUniCast is Test, Deployers {
 
         hook.addLiquidity(key, 10 ether, 10 ether);
         vm.stopPrank();
+
+        // mint to vault, which becomes an LP basically 
+        token0.mint(address(hook), 1000 ether);
+        token1.mint(address(hook), 1000 ether);
     }
 
     function testEtch() public view {
@@ -102,9 +111,14 @@ contract TestUniCast is Test, Deployers {
     function testVolatilityOracleAddress() public view {
         assertEq(oracleAddr, address(hook.getVolatilityOracle()));
     }
+
     function testGetFeeWithVolatility() public {
         PoolId poolId = key.toId();
-        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getFee.selector, poolId), abi.encode(uint24(650)));
+        vm.mockCall(
+            oracleAddr,
+            abi.encodeWithSelector(oracle.getFee.selector, poolId),
+            abi.encode(uint24(650))
+        );
         uint128 fee = hook.getFee(poolId);
         console.logUint(fee);
         assertEq(fee, 650);
@@ -124,39 +138,57 @@ contract TestUniCast is Test, Deployers {
 
     function testBeforeSwapVolatile() public {
         PoolId poolId = key.toId();
-        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getFee.selector), abi.encode(uint24(650)));
-        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId), abi.encode(LiquidityData(-INITIAL_MAX_TICK, INITIAL_MAX_TICK)));
+        vm.mockCall(
+            oracleAddr,
+            abi.encodeWithSelector(oracle.getFee.selector),
+            abi.encode(uint24(650))
+        );
+        vm.mockCall(
+            oracleAddr,
+            abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId),
+            abi.encode(LiquidityData(-INITIAL_MAX_TICK, INITIAL_MAX_TICK))
+        );
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: -0.01 ether,
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
         // 1. Conduct a swap at baseline vol
-        // This should just use `BASE_FEE` 
+        // This should just use `BASE_FEE`
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
         assertEq(_fetchPoolLPFee(key), 650);
-        (bool accruedFees,) = hook.poolInfos(poolId);
+        (bool accruedFees, ) = hook.poolInfos(poolId);
         assertEq(accruedFees, true);
     }
 
     function testBeforeSwapNotVolatile() public {
         PoolId poolId = key.toId();
-        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getFee.selector), abi.encode(uint24(500)));
-        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId), abi.encode(LiquidityData(-INITIAL_MAX_TICK, INITIAL_MAX_TICK)));
+        vm.mockCall(
+            oracleAddr,
+            abi.encodeWithSelector(oracle.getFee.selector),
+            abi.encode(uint24(500))
+        );
+        vm.mockCall(
+            oracleAddr,
+            abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId),
+            abi.encode(LiquidityData(-INITIAL_MAX_TICK, INITIAL_MAX_TICK))
+        );
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: -0.01 ether,
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
         // 1. Conduct a swap at baseline vol
-        // This should just use `BASE_FEE` 
+        // This should just use `BASE_FEE`
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
         assertEq(_fetchPoolLPFee(key), 500);
     }
 
-    function _fetchPoolLPFee(PoolKey memory _key) internal view returns (uint256 lpFee) {
+    function _fetchPoolLPFee(
+        PoolKey memory _key
+    ) internal view returns (uint256 lpFee) {
         PoolId id = _key.toId();
-        (,,, lpFee) = manager.getSlot0(id);
+        (, , , lpFee) = manager.getSlot0(id);
     }
 
     function testAddLiquidity() public {
@@ -168,7 +200,11 @@ contract TestUniCast is Test, Deployers {
         token1.approve(address(hook), type(uint256).max);
 
         uint256 liquidity = hook.addLiquidity(key, 1.5 ether, 1.5 ether);
-        assertEq(liquidity, EXPECTED_LIQUIDITY, "Liquidity should be exactly 250763249753729650363 according to equation");
+        assertEq(
+            liquidity,
+            EXPECTED_LIQUIDITY,
+            "Liquidity should be exactly 250763249753729650363 according to equation"
+        );
 
         vm.stopPrank();
     }
@@ -182,7 +218,7 @@ contract TestUniCast is Test, Deployers {
         token1.approve(address(hook), type(uint256).max);
 
         vm.expectRevert();
-        hook.addLiquidity(key, 1.5 ether, 1.5 ether); 
+        hook.addLiquidity(key, 1.5 ether, 1.5 ether);
 
         vm.stopPrank();
     }
@@ -196,14 +232,28 @@ contract TestUniCast is Test, Deployers {
         token1.approve(address(hook), type(uint256).max);
 
         uint256 liquidity = hook.addLiquidity(key, 1.5 ether, 1.5 ether);
-        assertEq(liquidity, EXPECTED_LIQUIDITY, "Liquidity should be exactly 250763249753729650363");
+        assertEq(
+            liquidity,
+            EXPECTED_LIQUIDITY,
+            "Liquidity should be exactly 250763249753729650363"
+        );
 
         hook.removeLiquidity(key, 0.5 ether, 1 ether);
 
         uint256 balance0 = token0.balanceOf(bob);
         uint256 balance1 = token1.balanceOf(bob);
-        assertApproxEqAbs(balance0, 998.5 ether, 0.5 ether, "Token0 balance should be approximately 998.5 ether after removing liquidity");
-        assertApproxEqAbs(balance1, 999 ether, 0.5 ether, "Token1 balance should be approximately 999 ether after removing liquidity");
+        assertApproxEqAbs(
+            balance0,
+            998.5 ether,
+            0.5 ether,
+            "Token0 balance should be approximately 998.5 ether after removing liquidity"
+        );
+        assertApproxEqAbs(
+            balance1,
+            999 ether,
+            0.5 ether,
+            "Token1 balance should be approximately 999 ether after removing liquidity"
+        );
         vm.stopPrank();
     }
 
@@ -216,7 +266,11 @@ contract TestUniCast is Test, Deployers {
         token1.approve(address(hook), type(uint256).max);
 
         uint256 liquidity = hook.addLiquidity(key, 1.5 ether, 1.5 ether);
-        assertEq(liquidity, EXPECTED_LIQUIDITY, "Liquidity should be exactly 250763249753729650363");
+        assertEq(
+            liquidity,
+            EXPECTED_LIQUIDITY,
+            "Liquidity should be exactly 250763249753729650363"
+        );
 
         vm.expectRevert();
         hook.removeLiquidity(key, 2 ether, 2 ether);
@@ -227,29 +281,45 @@ contract TestUniCast is Test, Deployers {
         PoolId poolId = key.toId();
         vm.expectEmit(targetAddr);
         emit RebalanceOccurred(poolId);
-        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getFee.selector, poolId), abi.encode(uint24(500)));
-        vm.expectCall(oracleAddr, abi.encodeCall(oracle.getLiquidityData, (poolId)));
-        vm.mockCall(oracleAddr, abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId), abi.encode(LiquidityData(-INITIAL_MAX_TICK, 2*INITIAL_MAX_TICK)));
+        vm.mockCall(
+            oracleAddr,
+            abi.encodeWithSelector(oracle.getFee.selector, poolId),
+            abi.encode(uint24(500))
+        );
+        vm.expectCall(
+            oracleAddr,
+            abi.encodeCall(oracle.getLiquidityData, (poolId))
+        );
+        vm.mockCall(
+            oracleAddr,
+            abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId),
+            abi.encode(LiquidityData(-INITIAL_MAX_TICK, 2 * INITIAL_MAX_TICK))
+        );
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: -1 ether,
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
-        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+        swapRouter.swap(key, params, testSettings, abi.encode(true)); // hookdata is firstSwap
 
         // Check if rebalancing occurred
-        (bool accruedFees,) = hook.poolInfos(poolId);
-        assertTrue(accruedFees, "Rebalancing should have occurred and set hasAccruedFees to true");
+        (bool accruedFees, ) = hook.poolInfos(poolId);
+        assertTrue(
+            accruedFees,
+            "Rebalancing should have occurred and set hasAccruedFees to true"
+        );
         vm.stopPrank();
     }
 
     function testRebalanceAfterSwapNegative() public {
         PoolId poolId = key.toId();
         // Check if rebalancing did not occur with no swaps
-        (bool accruedFees,) = hook.poolInfos(poolId);
-        assertFalse(accruedFees, "Rebalancing should not have occurred and hasAccruedFees should be false");
+        (bool accruedFees, ) = hook.poolInfos(poolId);
+        assertFalse(
+            accruedFees,
+            "Rebalancing should not have occurred and hasAccruedFees should be false"
+        );
 
         vm.stopPrank();
     }
-    
 }

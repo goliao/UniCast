@@ -16,6 +16,10 @@ contract UniCastOracle is Ownable, IUniCastOracle {
     error Unauthorized();
 
     mapping (PoolId => int24) public feeAdditional; // could be less than base fee 
+
+    // right now, each pool's LiquidityData is initialized by keeper right after the pool is created, but 
+    // in the future, the hook can be granted access to initialize the liquidityData 
+    // in the afterInitialize hook. 
     mapping (PoolId => LiquidityData) public liquidityData;
 
     modifier onlyKeeper() {
