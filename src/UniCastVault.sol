@@ -20,7 +20,6 @@ import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {TransientStateLibrary} from "v4-core/libraries/TransientStateLibrary.sol";
 import {IUniCastOracle, LiquidityData} from "./interface/IUniCastOracle.sol";
-import "forge-std/console.sol";
 
 abstract contract UniCastVault {
     using LPFeeLibrary for uint24;
@@ -503,10 +502,6 @@ abstract contract UniCastVault {
             ZERO_BYTES
         );
 
-        console.logString("after remove liquidity");
-        console.logInt(balanceDelta.amount0());
-        console.logInt(balanceDelta.amount1());
-
         // get current price
         (uint160 sqrtPriceX96, , , ) = manager.getSlot0(poolId);
 
@@ -539,7 +534,7 @@ abstract contract UniCastVault {
             );
 
             // set optimal liquidity
-            (BalanceDelta balanceDeltaAfter, ) = manager.modifyLiquidity(
+            manager.modifyLiquidity(
                 key,
                 IPoolManager.ModifyLiquidityParams({
                     tickLower: liquidityData.tickLower,
@@ -549,32 +544,11 @@ abstract contract UniCastVault {
                 }),
                 ZERO_BYTES
             );
-
-            // donate the difference
-            // uint128 donateAmount0 = uint128(
-            //     balanceDelta.amount0() + balanceDeltaAfter.amount0()
-            // );
-            // uint128 donateAmount1 = uint128(
-            //     balanceDelta.amount1() + balanceDeltaAfter.amount1()
-            // );
-
-            // if (manager.getLiquidity(poolId) > 0) {
-            //     manager.donate(
-            //         key,
-            //         donateAmount0,
-            //         donateAmount1,
-            //         ZERO_BYTES
-            //     );
-            // }
         }
 
         int256 delta0 = manager.currencyDelta(address(this), key.currency0);
         int256 delta1 = manager.currencyDelta(address(this), key.currency1);
-        console.logString("hi");
-        console.logInt(delta0);
-        console.logInt(delta1);
 
-        console.logUint(key.currency0.balanceOf(address(this)));
         _settleDeltas(address(this), key, delta0, delta1);
 
         minTick = liquidityData.tickLower;
