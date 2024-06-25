@@ -33,7 +33,6 @@ contract TestUniCast is Test, Deployers {
             uint160(
                 Hooks.BEFORE_INITIALIZE_FLAG |
                     Hooks.BEFORE_SWAP_FLAG |
-                    Hooks.BEFORE_ADD_LIQUIDITY_FLAG |
                     Hooks.AFTER_SWAP_FLAG
             )
         );

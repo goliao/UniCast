@@ -54,7 +54,7 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
             Hooks.Permissions({
                 beforeInitialize: true,
                 afterInitialize: false,
-                beforeAddLiquidity: true,
+                beforeAddLiquidity: false,
                 beforeRemoveLiquidity: false,
                 afterAddLiquidity: false,
                 afterRemoveLiquidity: false,
@@ -99,22 +99,6 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
             poolToken: poolToken
         });
         return IHooks.beforeInitialize.selector;
-    }
-
-    /**
-     * @dev Hook that is called before adding liquidity.
-     * @param sender The address of the sender.
-     * @return A bytes4 selector.
-     */
-    function beforeAddLiquidity(
-        address sender,
-        PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) external view override returns (bytes4) {
-        if (sender != address(this)) revert SenderMustBeHook();
-
-        return IHooks.beforeAddLiquidity.selector;
     }
 
     /**
