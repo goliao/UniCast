@@ -35,7 +35,7 @@ abstract contract UniCastVault {
 
     event LiquidityAdded(uint256 amount0, uint256 amount1);
     event LiquidityRemoved(uint256 amount0, uint256 amount1);
-    event RebalanceOccurred(PoolId poolId);
+    event RebalanceOccurred(PoolId poolId, int24 oldLowerTick, int24 oldUpperTick, int24 newLowerTick, int24 newUpperTick);
 
     error PoolNotInitialized();
     error InsufficientInitialLiquidity();
@@ -63,11 +63,10 @@ abstract contract UniCastVault {
     }
 
     struct PoolInfo {
-        bool hasAccruedFees;
         UniswapV4ERC20 poolToken;
     }
 
-    mapping(PoolId => PoolInfo) public poolInfos;
+    mapping(PoolId => UniswapV4ERC20) public vaultLiquidityToken;
 
     constructor(
         IPoolManager _poolManager,
@@ -128,13 +127,14 @@ abstract contract UniCastVault {
 
         if (poolLiquidity == 0) {
             liquidity -= MINIMUM_LIQUIDITY;
-            UniswapV4ERC20(poolInfos[poolId].poolToken).mint(
+            UniswapV4ERC20(vaultLiquidityToken[poolId]).mint(
                 address(0),
                 MINIMUM_LIQUIDITY
             );
         }
 
-        UniswapV4ERC20(poolInfos[poolId].poolToken).mint(msg.sender, liquidity);
+        // mint sender's share of the vault 
+        UniswapV4ERC20(vaultLiquidityToken[poolId]).mint(msg.sender, liquidity);
 
         if (
             uint128(-addedDelta.amount0()) < amount0 ||
@@ -183,7 +183,7 @@ abstract contract UniCastVault {
             true
         );
 
-        UniswapV4ERC20(poolInfos[poolId].poolToken).burn(
+        UniswapV4ERC20(vaultLiquidityToken[poolId]).burn(
             msg.sender,
             uint256(liquidityToRemove)
         );
@@ -203,15 +203,12 @@ abstract contract UniCastVault {
      * @param poolKey The key of the pool.
      */
     function autoRebalance(PoolKey memory poolKey) public {
-        PoolId poolId = poolKey.toId();
-        PoolInfo storage poolInfo = poolInfos[poolId];
         (
             bool _rebalanceRequired,
             LiquidityData memory liquidityData
         ) = rebalanceRequired(poolKey);
         if (_rebalanceRequired) {
             _rebalance(poolKey, liquidityData);
-            poolInfo.hasAccruedFees = true;
         }
     }
 
@@ -267,12 +264,6 @@ abstract contract UniCastVault {
             ),
             (BalanceDelta)
         );
-
-        // in case ETH was sent by mistake. This avoids ETH getting locked in the hook meant only for ERC20s.
-        uint256 ethBalance = address(this).balance;
-        if (ethBalance > 0) {
-            CurrencyLibrary.NATIVE.transfer(msg.sender, ethBalance);
-        }
     }
 
     /**
@@ -290,12 +281,10 @@ abstract contract UniCastVault {
 
         CallbackData memory data = abi.decode(rawData, (CallbackData));
         BalanceDelta delta;
-        PoolInfo storage poolInfo = poolInfos[data.key.toId()];
 
         if (data.params.liquidityDelta < 0) {
             // removing liquidity
             delta = _modifyLiquidity(data);
-            poolInfo.hasAccruedFees = false;
         } else {
             // adding liquidity
             (delta, ) = manager.modifyLiquidity(
@@ -550,11 +539,10 @@ abstract contract UniCastVault {
         int256 delta1 = manager.currencyDelta(address(this), key.currency1);
 
         _settleDeltas(address(this), key, delta0, delta1);
+        emit RebalanceOccurred(poolId, minTick, maxTick, liquidityData.tickLower, liquidityData.tickUpper);
 
         minTick = liquidityData.tickLower;
         maxTick = liquidityData.tickUpper;
-
-        emit RebalanceOccurred(poolId);
     }
 
     function _getLiquidityAndAmounts(

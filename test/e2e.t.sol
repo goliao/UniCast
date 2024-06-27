@@ -29,6 +29,14 @@ contract TestUniCast is Test, Deployers {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
 
+    event RebalanceOccurred(
+        PoolId poolId,
+        int24 oldLowerTick,
+        int24 oldUpperTick,
+        int24 newLowerTick,
+        int24 newUpperTick
+    );
+
     address targetAddr =
         address(
             uint160(
@@ -129,7 +137,6 @@ contract TestUniCast is Test, Deployers {
     }
 
     function testBeforeSwapNotVolatile() public {
-        PoolId poolId = key.toId();
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: -0.01 ether,
@@ -139,12 +146,13 @@ contract TestUniCast is Test, Deployers {
         // This should just use `BASE_FEE`
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
         assertEq(_fetchPoolLPFee(key), 500);
-        (bool accruedFees, ) = hook.poolInfos(poolId);
-        assertEq(accruedFees, true);
     }
 
     function testRebalanceAfterSwap() public {
+        int24 lowerTick = -60;
+        int24 upperTick = 60;
         PoolId poolId = key.toId();
+
         vm.startPrank(keeper);
         oracle.setLiquidityData(poolId, -60, 60);
         vm.stopPrank();
@@ -153,15 +161,17 @@ contract TestUniCast is Test, Deployers {
             amountSpecified: -1 ether,
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
+        vm.expectEmit(targetAddr);
+        emit RebalanceOccurred(
+            poolId,
+            -INITIAL_MAX_TICK,
+            INITIAL_MAX_TICK,
+            lowerTick,
+            upperTick
+        );
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
         // Check if rebalancing occurred
-        (bool accruedFees, ) = hook.poolInfos(poolId);
-        assertTrue(
-            accruedFees,
-            "Rebalancing should have occurred and set hasAccruedFees to true"
-        );
-
         vm.stopPrank();
     }
 

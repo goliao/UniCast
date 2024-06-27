@@ -93,11 +93,7 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
                 Strings.toString(uint256(key.fee))
             )
         );
-        UniswapV4ERC20 poolToken = new UniswapV4ERC20(tokenSymbol, tokenSymbol);
-        poolInfos[poolId] = PoolInfo({
-            hasAccruedFees: false,
-            poolToken: poolToken
-        });
+        vaultLiquidityToken[poolId] = new UniswapV4ERC20(tokenSymbol, tokenSymbol);
         return IHooks.beforeInitialize.selector;
     }
 
@@ -121,11 +117,6 @@ contract UniCastHook is UniCastVolitilityFee, UniCastVault, BaseHook {
         uint24 fee = getFee(poolId);
         (, , , uint24 currentFee) = poolManagerFee.getSlot0(poolId);
         if (currentFee != fee) poolManagerFee.updateDynamicLPFee(key, fee);
-
-        if (!poolInfos[poolId].hasAccruedFees) {
-            PoolInfo storage pool = poolInfos[poolId];
-            pool.hasAccruedFees = true;
-        }
 
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }

@@ -9,6 +9,7 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
+import {Position} from "v4-core/libraries/Position.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {UniCastOracle} from "../src/UniCastOracle.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
@@ -46,7 +47,13 @@ contract TestUniCast is Test, Deployers {
     int24 constant INITIAL_MAX_TICK = 120;
 
     error MustUseDynamicFee();
-    event RebalanceOccurred(PoolId poolId);
+    event RebalanceOccurred(
+        PoolId poolId,
+        int24 oldLowerTick,
+        int24 oldUpperTick,
+        int24 newLowerTick,
+        int24 newUpperTick
+    );
 
     PoolSwapTest.TestSettings testSettings =
         PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
@@ -98,7 +105,7 @@ contract TestUniCast is Test, Deployers {
         hook.addLiquidity(key, 10 ether, 10 ether);
         vm.stopPrank();
 
-        // mint to vault, which becomes an LP basically 
+        // mint to vault, which becomes an LP basically
         token0.mint(address(hook), 1000 ether);
         token1.mint(address(hook), 1000 ether);
     }
@@ -156,8 +163,6 @@ contract TestUniCast is Test, Deployers {
         // This should just use `BASE_FEE`
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
         assertEq(_fetchPoolLPFee(key), 650);
-        (bool accruedFees, ) = hook.poolInfos(poolId);
-        assertEq(accruedFees, true);
     }
 
     function testBeforeSwapNotVolatile() public {
@@ -279,7 +284,13 @@ contract TestUniCast is Test, Deployers {
     function testRebalanceAfterSwap() public {
         PoolId poolId = key.toId();
         vm.expectEmit(targetAddr);
-        emit RebalanceOccurred(poolId);
+        emit RebalanceOccurred(
+            poolId,
+            -INITIAL_MAX_TICK,
+            INITIAL_MAX_TICK,
+            -INITIAL_MAX_TICK,
+            2 * INITIAL_MAX_TICK
+        );
         vm.mockCall(
             oracleAddr,
             abi.encodeWithSelector(oracle.getFee.selector, poolId),
@@ -301,24 +312,71 @@ contract TestUniCast is Test, Deployers {
         });
         swapRouter.swap(key, params, testSettings, abi.encode(true)); // hookdata is firstSwap
 
-        // Check if rebalancing occurred
-        (bool accruedFees, ) = hook.poolInfos(poolId);
-        assertTrue(
-            accruedFees,
-            "Rebalancing should have occurred and set hasAccruedFees to true"
-        );
         vm.stopPrank();
     }
 
     function testRebalanceAfterSwapNegative() public {
         PoolId poolId = key.toId();
-        // Check if rebalancing did not occur with no swaps
-        (bool accruedFees, ) = hook.poolInfos(poolId);
-        assertFalse(
-            accruedFees,
-            "Rebalancing should not have occurred and hasAccruedFees should be false"
+        (uint128 oldLiquidity, , ) = manager.getPositionInfo(
+            poolId,
+            _getPositionKey(
+                address(hook),
+                -INITIAL_MAX_TICK,
+                INITIAL_MAX_TICK,
+                0
+            )
         );
-
+        vm.mockCall(
+            oracleAddr,
+            abi.encodeWithSelector(oracle.getFee.selector, poolId),
+            abi.encode(uint24(500))
+        );
+        vm.expectCall(
+            oracleAddr,
+            abi.encodeCall(oracle.getLiquidityData, (poolId))
+        );
+        vm.mockCall(
+            oracleAddr,
+            abi.encodeWithSelector(oracle.getLiquidityData.selector, poolId),
+            abi.encode(LiquidityData(-INITIAL_MAX_TICK, INITIAL_MAX_TICK))
+        );
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -1 ether,
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+        swapRouter.swap(key, params, testSettings, abi.encode(true)); // hookdata is firstSwap
+        // Check if rebalancing did not occur with no swaps
+        (uint128 liquidity, , ) = manager.getPositionInfo(
+            poolId,
+            _getPositionKey(
+                address(hook),
+                -INITIAL_MAX_TICK,
+                INITIAL_MAX_TICK,
+                0
+            )
+        );
+        assertEq(oldLiquidity, liquidity);
         vm.stopPrank();
+    }
+
+    function _getPositionKey(
+        address owner,
+        int24 tickLower,
+        int24 tickUpper,
+        bytes32 salt
+    ) private pure returns (bytes32 positionKey) {
+        // positionKey = keccak256(abi.encodePacked(owner, tickLower, tickUpper, salt))
+        positionKey;
+
+        /// @solidity memory-safe-assembly
+        assembly {
+            mstore(0x26, salt) // [0x26, 0x46)
+            mstore(0x06, tickUpper) // [0x23, 0x26)
+            mstore(0x03, tickLower) // [0x20, 0x23)
+            mstore(0, owner) // [0x0c, 0x20)
+            positionKey := keccak256(0x0c, 0x3a) // len is 58 bytes
+            mstore(0x26, 0) // rewrite 0x26 to 0
+        }
     }
 }
