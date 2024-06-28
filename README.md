@@ -29,9 +29,14 @@ Forward-looking price changes to rebalance LP positions
 [![See Slides](assets/slide_preview.jpg)](https://docs.google.com/presentation/d/1fNhfOWnzQpHvRUWAvRYE1kagD5t1hFjfn-abNbr1vew/edit?usp=sharing) ([Slides in pdf](assets/Slides.pdf))
 
 
-
-**Implementation**
+## Technical notes 
+### Contract architecture
 ![Implementation](assets/diagram.png)
+### Notes
+1. During rebalance, the vault needs to modify its token0:token1 ratio to fit the new range. Currently, the math behind the rebalancing (determining the new liquidity value of the position after rebalancing to the new range) makes the assumption that the price in the pool will stay the same throughout the rebalance (see /assets/unicast_math.md). In the implementation however, the vault swaps with the pool itself during rebalancing, so this assumption is most likely untrue unless there is a tremendous amount of liquidity in the pool already coming from other LPs outside of the vault. 
+To make this assumption true, the vault could instead swap with a different pool or on-chain DEX just for the rebalancing itself. Or, the math could be reworked to not require this assumption. 
+2. In practice, the rebalancing does not need to happen as part of the afterSwap hook; it doesn't need to really be a hook at all. It would live on a separate vault contract, and the rebalance can simply be triggered periodically directly, not needing to check the oracle first. This was simply implemented as a hook here to show how it could be done, and also because this was built for the Uniswap Hookathon. 
+
 
 **UI**
 ![UI](assets/UI.jpg)
