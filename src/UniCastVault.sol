@@ -35,7 +35,13 @@ abstract contract UniCastVault {
 
     event LiquidityAdded(uint256 amount0, uint256 amount1);
     event LiquidityRemoved(uint256 amount0, uint256 amount1);
-    event RebalanceOccurred(PoolId poolId, int24 oldLowerTick, int24 oldUpperTick, int24 newLowerTick, int24 newUpperTick);
+    event RebalanceOccurred(
+        PoolId poolId,
+        int24 oldLowerTick,
+        int24 oldUpperTick,
+        int24 newLowerTick,
+        int24 newUpperTick
+    );
 
     error PoolNotInitialized();
     error InsufficientInitialLiquidity();
@@ -133,7 +139,7 @@ abstract contract UniCastVault {
             );
         }
 
-        // mint sender's share of the vault 
+        // mint sender's share of the vault
         UniswapV4ERC20(vaultLiquidityToken[poolId]).mint(msg.sender, liquidity);
 
         if (
@@ -282,100 +288,17 @@ abstract contract UniCastVault {
         CallbackData memory data = abi.decode(rawData, (CallbackData));
         BalanceDelta delta;
 
-        if (data.params.liquidityDelta < 0) {
-            // removing liquidity
-            delta = _modifyLiquidity(data);
-        } else {
-            // adding liquidity
-            (delta, ) = manager.modifyLiquidity(
-                data.key,
-                data.params,
-                ZERO_BYTES
-            );
-            _settleDeltas(data.sender, data.key, delta.amount0(), delta.amount1());
-        }
+        (delta, ) = manager.modifyLiquidity(data.key, data.params, ZERO_BYTES);
+        _settleDeltas(
+            data.sender,
+            data.key,
+            delta.amount0(),
+            delta.amount1(),
+            data.takeClaims,
+            data.settleUsingBurn
+        );
 
         return abi.encode(delta);
-    }
-
-    /**
-     * @notice Removes the liquidity based on the callback data.
-     * @param modifierData The callback data for modifying liquidity.
-     * @return delta The balance delta after modification.
-     */
-    function _modifyLiquidity(
-        CallbackData memory modifierData
-    ) internal returns (BalanceDelta delta) {
-        uint128 liquidityBefore = manager
-            .getPosition(
-                modifierData.key.toId(),
-                address(this),
-                modifierData.params.tickLower,
-                modifierData.params.tickUpper,
-                modifierData.params.salt
-            )
-            .liquidity;
-        (delta, ) = manager.modifyLiquidity(
-            modifierData.key,
-            modifierData.params,
-            modifierData.hookData
-        );
-        uint128 liquidityAfter = manager
-            .getPosition(
-                modifierData.key.toId(),
-                address(this),
-                modifierData.params.tickLower,
-                modifierData.params.tickUpper,
-                modifierData.params.salt
-            )
-            .liquidity;
-
-        int256 delta0 = manager.currencyDelta(address(this), modifierData.key.currency0);
-        int256 delta1 = manager.currencyDelta(address(this), modifierData.key.currency1);
-
-        require(
-            int128(liquidityAfter) ==
-                int128(liquidityBefore) + modifierData.params.liquidityDelta,
-            "Incorrect liquidity after adding"
-        );
-
-        if (delta0 != 0) {
-            if (delta0 < 0) {
-                // need to pay the pool
-                _settle(
-                    modifierData.key.currency0,
-                    modifierData.sender,
-                    uint256(-delta0),
-                    modifierData.settleUsingBurn
-                );
-            } else {
-                // take from the pool
-                _take(
-                    modifierData.key.currency0,
-                    modifierData.sender,
-                    uint256(delta0),
-                    modifierData.takeClaims
-                );
-            }
-        }
-
-        if (delta1 != 0) {
-            if (delta1 < 0) {
-                _settle(
-                    modifierData.key.currency1,
-                    modifierData.sender,
-                    uint256(-delta1),
-                    modifierData.settleUsingBurn
-                );
-            } else {
-                _take(
-                    modifierData.key.currency1,
-                    modifierData.sender,
-                    uint256(delta1),
-                    modifierData.takeClaims
-                );
-            }
-        }
     }
 
     /**
@@ -388,19 +311,22 @@ abstract contract UniCastVault {
     function _settleDeltas(
         address sender,
         PoolKey memory key,
-        int256 delta0, int256 delta1
+        int256 delta0,
+        int256 delta1,
+        bool takeClaims,
+        bool settleUsingBurn
     ) internal {
         if (delta0 < 0) {
-            _settle(key.currency0, sender, uint256(-delta0), false);
+            _settle(key.currency0, sender, uint256(-delta0), settleUsingBurn);
         }
         if (delta1 < 0) {
-            _settle(key.currency1, sender, uint256(-delta1), false);
+            _settle(key.currency1, sender, uint256(-delta1), settleUsingBurn);
         }
         if (delta0 > 0) {
-            _take(key.currency0, sender, uint256(delta0), true);
+            _take(key.currency0, sender, uint256(delta0), takeClaims);
         }
         if (delta1 > 0) {
-            _take(key.currency1, sender, uint256(delta1), true);
+            _take(key.currency1, sender, uint256(delta1), takeClaims);
         }
     }
 
@@ -538,8 +464,14 @@ abstract contract UniCastVault {
         int256 delta0 = manager.currencyDelta(address(this), key.currency0);
         int256 delta1 = manager.currencyDelta(address(this), key.currency1);
 
-        _settleDeltas(address(this), key, delta0, delta1);
-        emit RebalanceOccurred(poolId, minTick, maxTick, liquidityData.tickLower, liquidityData.tickUpper);
+        _settleDeltas(address(this), key, delta0, delta1, true, false);
+        emit RebalanceOccurred(
+            poolId,
+            minTick,
+            maxTick,
+            liquidityData.tickLower,
+            liquidityData.tickUpper
+        );
 
         minTick = liquidityData.tickLower;
         maxTick = liquidityData.tickUpper;

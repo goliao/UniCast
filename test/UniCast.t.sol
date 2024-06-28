@@ -39,6 +39,10 @@ contract TestUniCast is Test, Deployers {
         );
     UniCastHook hook = UniCastHook(targetAddr);
     address oracleAddr = makeAddr("oracle");
+    address gordon = makeAddr("gordon");
+    address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
+    address broke = makeAddr("broke");
     UniCastOracle oracle = UniCastOracle(oracleAddr);
     MockERC20 token0;
     MockERC20 token1;
@@ -78,8 +82,6 @@ contract TestUniCast is Test, Deployers {
         (currency0, currency1) = deployMintAndApprove2Currencies();
         token0 = MockERC20(Currency.unwrap(currency0));
         token1 = MockERC20(Currency.unwrap(currency1));
-        token0.approve(address(hook), type(uint256).max);
-        token1.approve(address(hook), type(uint256).max);
 
         emit log_address(address(hook));
 
@@ -94,24 +96,27 @@ contract TestUniCast is Test, Deployers {
         );
         emit log_uint(key.fee);
 
-        // issue liquidity and allowance
-        address gordon = makeAddr("gordon");
-        vm.startPrank(gordon);
-        token0.mint(gordon, 10000 ether);
-        token1.mint(gordon, 10000 ether);
-        token0.approve(address(hook), type(uint256).max);
-        token1.approve(address(hook), type(uint256).max);
-
-        hook.addLiquidity(key, 10 ether, 10 ether);
-        vm.stopPrank();
-
         // mint to vault, which becomes an LP basically
         token0.mint(address(hook), 1000 ether);
         token1.mint(address(hook), 1000 ether);
+
+        _mintTokensToAndApprove(gordon);
+        _mintTokensToAndApprove(bob);
+        _mintTokensToAndApprove(alice);
+
+        // issue liquidity and allowance
+        vm.startPrank(gordon);
+        hook.addLiquidity(key, 10 ether, 10 ether);
+        vm.stopPrank();
     }
 
-    function testEtch() public view {
-        assertEq(address(hook), targetAddr);
+    function _mintTokensToAndApprove(address account) private {
+        token0.mint(account, 1000 ether);
+        token1.mint(account, 1000 ether);
+        vm.startPrank(account);
+        token0.approve(address(hook), type(uint256).max);
+        token1.approve(address(hook), type(uint256).max);
+        vm.stopPrank();
     }
 
     function testVolatilityOracleAddress() public view {
@@ -196,12 +201,7 @@ contract TestUniCast is Test, Deployers {
     }
 
     function testAddLiquidity() public {
-        address alice = makeAddr("alice");
         vm.startPrank(alice);
-        token0.mint(alice, 1000 ether);
-        token1.mint(alice, 1000 ether);
-        token0.approve(address(hook), type(uint256).max);
-        token1.approve(address(hook), type(uint256).max);
 
         uint256 liquidity = hook.addLiquidity(key, 1.5 ether, 1.5 ether);
         assertEq(
@@ -213,13 +213,51 @@ contract TestUniCast is Test, Deployers {
         vm.stopPrank();
     }
 
-    function testAddLiquidityNegative() public {
-        address alice = makeAddr("alice");
+    function testAddLiquidityAdditional() public {
+        PoolId poolId = key.toId();
+
         vm.startPrank(alice);
-        token0.mint(alice, 0.5 ether); // Insufficient amount
-        token1.mint(alice, 0.5 ether); // Insufficient amount
-        token0.approve(address(hook), type(uint256).max);
-        token1.approve(address(hook), type(uint256).max);
+
+        uint256 liquidity = hook.addLiquidity(key, 1.5 ether, 1.5 ether);
+        assertEq(
+            liquidity,
+            EXPECTED_LIQUIDITY,
+            "Liquidity should be exactly 250763249753729650363 according to equation"
+        );
+
+        (uint128 oldLiquidity, , ) = manager.getPositionInfo(
+            poolId,
+            _getPositionKey(
+                address(hook),
+                -INITIAL_MAX_TICK,
+                INITIAL_MAX_TICK,
+                0
+            )
+        );
+
+        vm.stopPrank();
+
+        // add more liquidity
+        vm.startPrank(bob);
+        hook.addLiquidity(key, 1 ether, 1 ether);
+        (uint128 newLiquidity, , ) = manager.getPositionInfo(
+            poolId,
+            _getPositionKey(
+                address(hook),
+                -INITIAL_MAX_TICK,
+                INITIAL_MAX_TICK,
+                0
+            )
+        );
+
+        vm.assertGt(newLiquidity, oldLiquidity);
+        vm.stopPrank();
+    }
+
+    function testAddLiquidityNegative() public {
+        vm.startPrank(broke);
+        token0.mint(broke, 0.5 ether); // Insufficient amount
+        token1.mint(broke, 0.5 ether); // Insufficient amount
 
         vm.expectRevert();
         hook.addLiquidity(key, 1.5 ether, 1.5 ether);
@@ -228,12 +266,7 @@ contract TestUniCast is Test, Deployers {
     }
 
     function testRemoveLiquidity() public {
-        address bob = makeAddr("bob");
         vm.startPrank(bob);
-        token0.mint(bob, 1000 ether);
-        token1.mint(bob, 1000 ether);
-        token0.approve(address(hook), type(uint256).max);
-        token1.approve(address(hook), type(uint256).max);
 
         uint256 liquidity = hook.addLiquidity(key, 1.5 ether, 1.5 ether);
         assertEq(
@@ -262,12 +295,7 @@ contract TestUniCast is Test, Deployers {
     }
 
     function testRemoveLiquidityNegative() public {
-        address bob = makeAddr("bob");
         vm.startPrank(bob);
-        token0.mint(bob, 1000 ether);
-        token1.mint(bob, 1000 ether);
-        token0.approve(address(hook), type(uint256).max);
-        token1.approve(address(hook), type(uint256).max);
 
         uint256 liquidity = hook.addLiquidity(key, 1.5 ether, 1.5 ether);
         assertEq(
