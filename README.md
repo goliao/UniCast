@@ -32,6 +32,8 @@ Forward-looking price changes to rebalance LP positions
 ## Technical notes 
 ### Contract architecture
 ![Implementation](assets/diagram.png)
+### Call diagram for swap 
+![alt text](image.png)
 ### Notes
 1. During rebalance, the vault needs to modify its token0:token1 ratio to fit the new range. Currently, the math behind the rebalancing (determining the new liquidity value of the position after rebalancing to the new range) makes the assumption that the price in the pool will stay the same throughout the rebalance (see [/assets/unicast_math.md](https://github.com/goliao/UniCast/blob/main/assets/unicast_math.md)). In the implementation however, the vault swaps with the pool itself during rebalancing, so this assumption is most likely untrue unless there is a tremendous amount of liquidity in the pool already coming from other LPs outside of the vault. 
 To make this assumption true, the vault could instead swap with a different pool or on-chain DEX just for the rebalancing itself. Or, the math could be reworked to not require this assumption. 
