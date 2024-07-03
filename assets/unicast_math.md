@@ -75,8 +75,8 @@ Where:
 - $P_l$  is the price at the lower tick.
 - $P_u$  is the price at the upper tick.
 
-Prices are the price of token1 in terms of token0. Therefore, portfolio value in units of token0 is 
-$$v(L,P_c,P_l,P_u)=amount0+amount1*P_c$$
+Prices are the price of token0 in terms of token1. Therefore, portfolio value in units of token1 is 
+$$v(L,P_c,P_l,P_u)=amount0*P_c +amount1$$
 
 Rebalance action by itself should not change the price of the portfolio. Otherwise, LP can just create value out of rebalancing.
 
@@ -84,17 +84,17 @@ Suppose $P_l$ and $P_u$ both increase by 10\% and L and $P_c$ remain constant, a
 
 Same value of portfolio before and after reblancing requires:
 
-$$\Delta amount0=- \Delta amount1*P_c,$$
+$$\Delta amount1=- \Delta amount0*P_c,$$
 
 That is,
 
-$$\frac{\Delta L \times (\sqrt{P_u} - \sqrt{P_l})}{\sqrt{P_c} \times \sqrt{P_u}}=-(\Delta L \times (\sqrt{P_c} - \sqrt{P_l}))*P_c,$$
+$$(\Delta L \times (\sqrt{P_c} - \sqrt{P_l}))=-P_c\frac{\Delta L \times (\sqrt{P_u} - \sqrt{P_l})}{\sqrt{P_c} \times \sqrt{P_u}},$$
 
 which simplifies to
 
-$$\sqrt{P_u} = \frac{\sqrt{P_l} P_c \sqrt{P_c} + \sqrt{P_l}}{1 - P_c^2}.$$
+$$\sqrt{P_u} = \frac{P_c\sqrt{P_l} }{2P_c - \sqrt{P_c}\sqrt{P_l}}.$$
 
-This means that if we shift $P_l$ by say a certain growth rate, $P_u$ would most likely not shift by as much without modifying the current price changing.  
+<!-- This means that if we shift $P_l$ by say a certain growth rate, $P_u$ would most likely not shift by as much without modifying the current price changing.   -->
 
 Assuming $P_c$ is unchanged, one can change the Liquidity such that 
 
@@ -111,14 +111,14 @@ $$
  -->
 $$
 \begin{align}
-    &\frac{L \times (\sqrt{P_u} - \sqrt{P_l})}{\sqrt{P_c} \times \sqrt{P_u}} + P_c \cdot (L \times (\sqrt{P_c} - \sqrt{P_l})) \notag \\
-    & = \frac{L' \times (\sqrt{P_u'} - \sqrt{P_l'})}{\sqrt{P_c} \times \sqrt{P_u'}} + P_c \cdot (L' \times (\sqrt{P_c} - \sqrt{P_l'})) \notag
+    &\frac{L \times (\sqrt{P_u} - \sqrt{P_l})}{\sqrt{P_c} \times \sqrt{P_u}} \cdot P_c + (L \times (\sqrt{P_c} - \sqrt{P_l})) \notag \\
+    & = \frac{L' \times (\sqrt{P_u'} - \sqrt{P_l'})}{\sqrt{P_c} \times \sqrt{P_u'}} \cdot P_c + (L' \times (\sqrt{P_c} - \sqrt{P_l'})) \notag
 \end{align}
 $$
  
  Simplifying, we get
  
-$$L{\prime} = L \times \frac{\left( \frac{\sqrt{P_u} - \sqrt{P_l}}{\sqrt{P_c} \sqrt{P_u}} + P_c \times (\sqrt{P_c} - \sqrt{P_l}) \right)}{\left( \frac{\sqrt{P_u{\prime}} - \sqrt{P_l{\prime}}}{\sqrt{P_c} \sqrt{P_u{\prime}}} + P_c \times (\sqrt{P_c} - \sqrt{P_l{\prime}}) \right)}$$
+$$L{\prime} = L \times \frac{ \frac{P_c\left(\sqrt{P_u} - \sqrt{P_l}\right)}{\sqrt{P_c} \sqrt{P_u}} + \sqrt{P_c} - \sqrt{P_l} }{ \frac{P_c\left(\sqrt{P_u{\prime}} - \sqrt{P_l{\prime}}\right)}{\sqrt{P_c} \sqrt{P_u{\prime}}} +  \sqrt{P_c} - \sqrt{P_l{\prime}} }$$
 
 
 This liquidity delta is right only if there's a lot of other LP liquidity outside of the vault. We can indeed make this the case by artificially adding a large amount of liquidity outside of the vault for demo purpose. 
