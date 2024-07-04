@@ -536,16 +536,16 @@ abstract contract UniCastVault {
         uint256 PcX96 = (sqrtPc ** 2) >> FixedPoint96.RESOLUTION;
 
         // Calculate numerator terms
-        uint256 numerator = (sqrtPu - sqrtPl) /
+        uint256 numerator = (PcX96 * (sqrtPu - sqrtPl)) /
             (sqrtPc * sqrtPu) +
-            PcX96 *
-            (sqrtPc - sqrtPl);
+            sqrtPc -
+            sqrtPl;
 
         // Calculate denominator terms
-        uint256 denominator = (sqrtPuNew - sqrtPlNew) /
+        uint256 denominator = (PcX96 * (sqrtPuNew - sqrtPlNew)) /
             (sqrtPc * sqrtPuNew) +
-            PcX96 *
-            (sqrtPc - sqrtPlNew);
+            sqrtPc -
+            sqrtPlNew;
 
         // Calculate new L
         return
